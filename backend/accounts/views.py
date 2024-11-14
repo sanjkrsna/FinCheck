@@ -81,11 +81,35 @@ def stock_data(request):
 
     ist = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist)
-    market_closed = current_time.hour >= 15 and current_time.minute >= 30
+    current_date = current_time.date()
+    
+    # Determine market status
+    current_hour = current_time.hour
+    current_minute = current_time.minute
+    is_weekend = current_time.weekday() >= 5
+    
+    # Market is closed if:
+    # 1. It's after 3:30 PM
+    # 2. It's before 9:15 AM
+    # 3. It's a weekend
+    market_closed = (
+        is_weekend or 
+        (current_hour > 15 or (current_hour == 15 and current_minute >= 30)) or
+        (current_hour < 9 or (current_hour == 9 and current_minute < 15))
+    )
+
+    # Get yesterday's date
+    yesterday = current_date - timedelta(days=1)
+    
+    # If it's weekend, get last Friday
+    if is_weekend:
+        days_to_subtract = current_time.weekday() - 4
+        end_date = current_date - timedelta(days=days_to_subtract)
+    else:
+        end_date = yesterday if not market_closed else current_date
 
     try:
         if data_type == 'historical':
-            end_date = datetime.now()
             start_date = end_date - timedelta(days=31)
             
             data = yf.download(symbols, start=start_date, end=end_date, interval='1d', progress=False)

@@ -174,75 +174,70 @@ const HomeView = () => {
       setLoadingAnimation(true);
       setLoadError(false);
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Fetching market data...'); // Debug log
 
-      const cachedData = localStorage.getItem(cacheKey);
-      if (cachedData && !forceRefresh) {
-        const { data, timestamp } = JSON.parse(cachedData);
-        if (Date.now() - timestamp < cacheDuration) {
-          const processedData = data.map(item => ({
-            ...item,
-            date: new Date(item.date)
-          }));
-          setHistoricalData(processedData);
-          setIsLoading(false);
-          setLoadingAnimation(false);
-          return;
+      const response = await fetch(
+        'http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical',
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
         }
-      }
-
-      setIsLoading(true);
-      const response = await fetch(`http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical&t=${Date.now()}`);
+      );
+      
+      console.log('Response status:', response.status); // Debug log
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const jsonData = await response.json();
+      console.log('Raw API response:', jsonData); // Debug log
       
       if (!jsonData.data || !Array.isArray(jsonData.data)) {
         throw new Error('Invalid data format from API');
       }
 
-      const processedData = jsonData.data.map(item => ({
-        date: new Date(item.date),
-        sensex: item['^BSESN'],
-        nifty: item['^NSEI']
-      }));
+      const processedData = jsonData.data
+        .map(item => ({
+          date: new Date(item.date),
+          sensex: parseFloat(item['^BSESN']),
+          nifty: parseFloat(item['^NSEI'])
+        }))
+        .filter(item => 
+          item.date instanceof Date && 
+          !isNaN(item.date) && 
+          !isNaN(item.sensex) && 
+          !isNaN(item.nifty)
+        )
+        .sort((a, b) => a.date - b.date);
 
-      const validData = processedData.every(item => 
-        item.date instanceof Date && 
-        !isNaN(item.date) && 
-        !isNaN(item.sensex) && 
-        !isNaN(item.nifty)
-      );
-
-      if (!validData) {
-        throw new Error('Invalid data points after processing');
-      }
-
-      processedData.sort((a, b) => a.date - b.date);
-
-      localStorage.setItem(cacheKey, JSON.stringify({
-        data: processedData,
-        timestamp: Date.now()
-      }));
+      console.log('Processed data points:', processedData.length); // Debug log
+      console.log('Sample processed data:', processedData[0]); // Debug log
 
       setHistoricalData(processedData);
-      console.log('Processed historical data:', processedData);
+      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching market data:', error);
       setLoadError(true);
     } finally {
-      setIsLoading(false);
       setLoadingAnimation(false);
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    console.log('Initializing data fetch...'); // Debug log
     fetchAndCacheData();
-    const interval = setInterval(() => fetchAndCacheData(true), 2 * 60 * 60 * 1000);
-    return () => clearInterval(interval);
+    
+    // Set up refresh interval
+    const intervalId = setInterval(() => {
+      console.log('Refreshing data...'); // Debug log
+      fetchAndCacheData(true);
+    }, 2 * 60 * 60 * 1000); // 2 hours
+
+    return () => clearInterval(intervalId);
   }, [fetchAndCacheData]);
 
   useEffect(() => {
