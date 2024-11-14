@@ -27,11 +27,16 @@ const LogoutPage = () => {
       } catch (error) {
         console.error("Failed to logout", error.response?.data || error.message);
       } finally {
-        // Clear all stored tokens
+        // Clear all authentication tokens
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         sessionStorage.removeItem('accessToken');
         sessionStorage.removeItem('refreshToken');
+        
+        // Clear all cached market data
+        localStorage.removeItem('marketData');
+        localStorage.removeItem('newsData');
+        localStorage.removeItem('worldMarketsData');
         
         // Update auth state
         setIsAuthenticated(false);

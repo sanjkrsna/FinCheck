@@ -71,24 +71,74 @@ class UserInfoAPIView(RetrieveAPIView):
 
 @api_view(['GET'])
 def stock_data(request):
-    symbols = request.GET.getlist('symbols')  
+    symbols = request.GET.getlist('symbols')
+    data_type = request.GET.get('type', 'historical')  # 'historical' or 'daily_change'
 
     if not symbols:
         return JsonResponse({'error': 'No stock symbols provided.'}, status=400)
 
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=30)
+    try:
+        if data_type == 'historical':
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)
+            
+            data = yf.download(symbols, start=start_date, end=end_date, interval='1d')
+            
+            formatted_data = []
+            for date, row in data.iterrows():
+                entry = {'date': date.strftime('%Y-%m-%d')}
+                for symbol in symbols:
+                    try:
+                        # Handle both single and multiple symbol cases
+                        if len(symbols) > 1:
+                            entry[symbol] = row['Close'][symbol]
+                        else:
+                            entry[symbol] = row['Close']
+                    except Exception:
+                        entry[symbol] = None
+                formatted_data.append(entry)
 
-    data = yf.download(symbols, start=start_date, end=end_date, interval='1d')
+            return JsonResponse(formatted_data, safe=False)
 
-    formatted_data = []
-    for date, row in data.iterrows():
-        entry = {'date': date.strftime('%Y-%m-%d')}
-        for symbol in symbols:
-            entry[symbol] = row['Close'][symbols.index(symbol)]
-        formatted_data.append(entry)
+        elif data_type == 'daily_change':
+            # Fetch today and yesterday's data for percentage change
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=2)
+            
+            data = yf.download(symbols, start=start_date, end=end_date, interval='1d')
+            
+            changes = {}
+            for symbol in symbols:
+                try:
+                    # Get the last two days of closing prices
+                    if len(symbols) > 1:
+                        closes = data['Close'][symbol].tail(2)
+                    else:
+                        closes = data['Close'].tail(2)
+                    
+                    if len(closes) >= 2:
+                        yesterday_price = closes.iloc[-2]
+                        today_price = closes.iloc[-1]
+                        percent_change = ((today_price - yesterday_price) / yesterday_price) * 100
+                        
+                        changes[symbol] = {
+                            'current_price': round(today_price, 2),
+                            'previous_price': round(yesterday_price, 2),
+                            'percent_change': round(percent_change, 2)
+                        }
+                    else:
+                        changes[symbol] = {
+                            'error': 'Insufficient data'
+                        }
+                except Exception as e:
+                    changes[symbol] = {
+                        'error': str(e)
+                    }
+            
+            return JsonResponse(changes)
 
-    return JsonResponse(formatted_data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 
             
