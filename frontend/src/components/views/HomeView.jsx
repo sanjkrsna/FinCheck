@@ -74,15 +74,15 @@ const HomeView = () => {
   const [worldMarketsData, setWorldMarketsData] = useState({});
   const [loadingAnimation, setLoadingAnimation] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [watchlistData, setWatchlistData] = useState({});
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
 
   const xScale = useMemo(() => {
     if (!historicalData.length || !containerWidth) return null;
+    const dates = historicalData.map(d => d.date);
     return scaleTime({
       range: [0, containerWidth - margin.left - margin.right],
-      domain: [
-        Math.min(...historicalData.map(d => d.date)),
-        Math.max(...historicalData.map(d => d.date))
-      ],
+      domain: [Math.min(...dates), Math.max(...dates)],
     });
   }, [historicalData, containerWidth, margin]);
 
@@ -94,11 +94,11 @@ const HomeView = () => {
     const padding = (max - min) * 0.1;
     
     return scaleLinear({
-      range: [height, 0],
+      range: [height - margin.bottom, margin.top],
       domain: [min - padding, max + padding],
       nice: true,
     });
-  }, [historicalData, height]);
+  }, [historicalData, height, margin]);
 
   const niftyScale = useMemo(() => {
     if (!historicalData.length) return null;
@@ -108,11 +108,11 @@ const HomeView = () => {
     const padding = (max - min) * 0.1;
     
     return scaleLinear({
-      range: [height, 0],
+      range: [height - margin.bottom, margin.top],
       domain: [min - padding, max + padding],
       nice: true,
     });
-  }, [historicalData, height]);
+  }, [historicalData, height, margin]);
 
   const isReady = useMemo(() => {
     const hasScales = xScale && sensexScale && niftyScale;
@@ -176,8 +176,7 @@ const HomeView = () => {
       setLoadingAnimation(true);
       setLoadError(false);
       
-      // Simulate initial loading animation
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       const cachedData = localStorage.getItem(cacheKey);
       if (cachedData && !forceRefresh) {
@@ -201,32 +200,30 @@ const HomeView = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('Raw API response:', data);
-
-      if (!Array.isArray(data)) {
-        throw new Error('Expected array of data from API');
+      const jsonData = await response.json();
+      
+      if (!jsonData.data || !Array.isArray(jsonData.data)) {
+        throw new Error('Invalid data format from API');
       }
 
-      const processedData = data
-        .map(item => {
-          const date = new Date(item.date);
-          const sensex = parseFloat(item['^BSESN']);
-          const nifty = parseFloat(item['^NSEI']);
-          
-          if (!isNaN(sensex) && !isNaN(nifty) && date instanceof Date && !isNaN(date)) {
-            return { date, sensex, nifty };
-          }
-          return null;
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.date - b.date);
+      const processedData = jsonData.data.map(item => ({
+        date: new Date(item.date),
+        sensex: item['^BSESN'],
+        nifty: item['^NSEI']
+      }));
 
-      console.log('Processed data:', processedData);
+      const validData = processedData.every(item => 
+        item.date instanceof Date && 
+        !isNaN(item.date) && 
+        !isNaN(item.sensex) && 
+        !isNaN(item.nifty)
+      );
 
-      if (processedData.length === 0) {
-        throw new Error('No valid data points after processing');
+      if (!validData) {
+        throw new Error('Invalid data points after processing');
       }
+
+      processedData.sort((a, b) => a.date - b.date);
 
       localStorage.setItem(cacheKey, JSON.stringify({
         data: processedData,
@@ -234,10 +231,10 @@ const HomeView = () => {
       }));
 
       setHistoricalData(processedData);
+      console.log('Processed historical data:', processedData);
     } catch (error) {
       console.error('Error fetching market data:', error);
       setLoadError(true);
-      localStorage.removeItem(cacheKey);
     } finally {
       setIsLoading(false);
       setLoadingAnimation(false);
@@ -254,7 +251,8 @@ const HomeView = () => {
     if (historicalData.length > 0) {
       console.log('First data point:', historicalData[0]);
       console.log('Last data point:', historicalData[historicalData.length - 1]);
-      console.log('Total data points:', historicalData.length);
+      console.log('Data points:', historicalData.length);
+      console.log('Sample date type:', historicalData[0].date instanceof Date);
     }
   }, [historicalData]);
 
@@ -481,10 +479,71 @@ const HomeView = () => {
     '^HSI': { name: 'Hang Seng', currency: 'HK$', locale: 'zh-HK' }
   };
 
+  const getMarketStatus = (lastUpdate) => {
+    const ist = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const currentTime = new Date(ist);
+    const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
+    
+    // Market hours: 9:15 AM to 3:30 PM IST
+    const isMarketHours = (currentHour > 9 || (currentHour === 9 && currentMinute >= 15)) 
+                         && (currentHour < 15 || (currentHour === 15 && currentMinute <= 30));
+    const isWeekend = currentTime.getDay() === 0 || currentTime.getDay() === 6;
+
+    if (isWeekend) return 'Market Closed (Weekend)';
+    if (!isMarketHours) return 'Market Closed';
+    return 'Market Open';
+  };
+
+  const fetchWatchlistData = useCallback(async () => {
+    try {
+      setWatchlistLoading(true);
+      
+      // Get symbols for watchlist items
+      const symbols = watchlist.map(item => getSymbol(item)).filter(Boolean);
+      
+      if (symbols.length === 0) return;
+      
+      const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
+      const response = await fetch(
+        `http://localhost:8000/api/stock-data/?${queryString}&type=individual&mode=daily`
+      );
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      
+      const data = await response.json();
+      setWatchlistData(data);
+    } catch (error) {
+      console.error('Error fetching watchlist data:', error);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, [watchlist]);
+
+  useEffect(() => {
+    fetchWatchlistData();
+    const interval = setInterval(fetchWatchlistData, 2 * 60 * 60 * 1000); // Refresh every 2 hours
+    return () => clearInterval(interval);
+  }, [fetchWatchlistData]);
+
   return (
     <div className="grid grid-cols-12 gap-4">
       <div className="col-span-8 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Market Overview</h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">Market Overview</h2>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">
+              {historicalData.length > 0 && `Last updated: ${new Date(historicalData[historicalData.length - 1].date).toLocaleDateString()}`}
+            </span>
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              getMarketStatus() === 'Market Open' 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-gray-100 text-gray-600'
+            }`}>
+              {getMarketStatus()}
+            </span>
+          </div>
+        </div>
         <div 
           ref={containerRef}
           className="relative h-[200px] w-full"
@@ -700,7 +759,10 @@ const HomeView = () => {
       </div>
 
       <div className="col-span-4 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">World Markets</h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">World Markets</h2>
+          <span className="text-xs text-gray-500">Last market close</span>
+        </div>
         <div className="space-y-2 max-h-[150px] overflow-auto">
           {Object.entries(worldMarketsData).map(([symbol, data]) => {
             const config = marketConfig[symbol];
@@ -713,7 +775,12 @@ const HomeView = () => {
 
             return (
               <div key={symbol} className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">{config.name}</span>
+                <div>
+                  <span className="text-sm text-gray-600">{config.name}</span>
+                  <span className="text-xs text-gray-400 block">
+                    {data.as_of_date ? `As of ${data.as_of_date}` : 'Last close'}
+                  </span>
+                </div>
                 <div className="text-right">
                   <span className="text-sm font-medium block">
                     {formatPrice(data.current_price)}
@@ -731,22 +798,61 @@ const HomeView = () => {
       </div>
 
       <div className="col-span-8 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Your Watchlist</h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">Your Watchlist</h2>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-500">Last market close</span>
+            {watchlistLoading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+            )}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3 max-h-[150px] overflow-auto">
-          {watchlist.map((item) => (
-            <div key={item} className="bg-gray-50 p-3 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">{item}</span>
-                <span className="text-green-500">+2.4%</span>
+          {watchlist.map((item) => {
+            const symbol = getSymbol(item);
+            const data = symbol ? watchlistData[symbol] : null;
+
+            return (
+              <div key={item} className="bg-gray-50 p-3 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-medium">{item}</span>
+                  {data && (
+                    <span className={`text-xs font-medium ${
+                      data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
+                    }`}>
+                      {data.day_change_percent >= 0 ? '+' : ''}
+                      {data.day_change_percent?.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-600">
+                  {data ? (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span>₹{data.current_price?.toLocaleString('en-IN')}</span>
+                        <span className={`text-xs ${
+                          data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
+                        }`}>
+                          {data.day_change >= 0 ? '▲' : '▼'} 
+                          ₹{Math.abs(data.day_change).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        <span>H: ₹{data.high?.toLocaleString('en-IN')}</span>
+                        <span className="mx-2">|</span>
+                        <span>L: ₹{data.low?.toLocaleString('en-IN')}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400">Loading...</span>
+                  )}
+                  <span className="text-xs text-gray-400 block mt-1">
+                    {symbol}
+                  </span>
+                </div>
               </div>
-              <div className="text-sm text-gray-600">
-                <span className="block">{item}</span>
-                <span className="text-xs text-gray-400">
-                  {getSymbol(item)}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

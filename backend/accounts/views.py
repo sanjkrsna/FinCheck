@@ -9,6 +9,8 @@ from django.http import JsonResponse
 from rest_framework.decorators import api_view
 import yfinance as yf
 from datetime import datetime, timedelta
+import pytz
+import pandas as pd
 
 
 class UserRegistrationAPIView(GenericAPIView):
@@ -72,70 +74,168 @@ class UserInfoAPIView(RetrieveAPIView):
 @api_view(['GET'])
 def stock_data(request):
     symbols = request.GET.getlist('symbols')
-    data_type = request.GET.get('type', 'historical')  # 'historical' or 'daily_change'
+    data_type = request.GET.get('type', 'historical')
 
     if not symbols:
         return JsonResponse({'error': 'No stock symbols provided.'}, status=400)
 
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist)
+    market_closed = current_time.hour >= 15 and current_time.minute >= 30
+
     try:
         if data_type == 'historical':
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
+            start_date = end_date - timedelta(days=31)
             
-            data = yf.download(symbols, start=start_date, end=end_date, interval='1d')
+            data = yf.download(symbols, start=start_date, end=end_date, interval='1d', progress=False)
+            
+            if not market_closed:
+                data = data[:-1]
             
             formatted_data = []
             for date, row in data.iterrows():
-                entry = {'date': date.strftime('%Y-%m-%d')}
+                entry = {
+                    'date': date.strftime('%Y-%m-%d'),
+                }
                 for symbol in symbols:
                     try:
-                        # Handle both single and multiple symbol cases
                         if len(symbols) > 1:
-                            entry[symbol] = row['Close'][symbol]
+                            entry[symbol] = round(row['Close'][symbol], 2)
                         else:
-                            entry[symbol] = row['Close']
+                            entry[symbol] = round(row['Close'], 2)
                     except Exception:
                         entry[symbol] = None
                 formatted_data.append(entry)
 
-            return JsonResponse(formatted_data, safe=False)
+            formatted_data = formatted_data[-30:]
+            
+            return JsonResponse({
+                'data': formatted_data,
+                'last_updated': formatted_data[-1]['date'],
+                'market_status': 'Closed' if market_closed else 'Open'
+            }, safe=False)
 
         elif data_type == 'daily_change':
-            # Fetch today and yesterday's data for percentage change
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=2)
+            start_date = end_date - timedelta(days=5)
             
-            data = yf.download(symbols, start=start_date, end=end_date, interval='1d')
+            data = yf.download(symbols, start=start_date, end=end_date, interval='1d', progress=False)
+            
+            if not market_closed:
+                data = data[:-1]
             
             changes = {}
             for symbol in symbols:
                 try:
-                    # Get the last two days of closing prices
                     if len(symbols) > 1:
-                        closes = data['Close'][symbol].tail(2)
+                        closes = data['Close'][symbol]
+                        dates = closes.index
                     else:
-                        closes = data['Close'].tail(2)
+                        closes = data['Close']
+                        dates = closes.index
                     
                     if len(closes) >= 2:
-                        yesterday_price = closes.iloc[-2]
-                        today_price = closes.iloc[-1]
-                        percent_change = ((today_price - yesterday_price) / yesterday_price) * 100
+                        prev_day_price = closes.iloc[-1]
+                        prev_prev_day_price = closes.iloc[-2]
+                        last_trading_date = dates[-1].strftime('%Y-%m-%d')
+                        percent_change = ((prev_day_price - prev_prev_day_price) / prev_prev_day_price) * 100
                         
                         changes[symbol] = {
-                            'current_price': round(today_price, 2),
-                            'previous_price': round(yesterday_price, 2),
-                            'percent_change': round(percent_change, 2)
+                            'current_price': round(prev_day_price, 2),
+                            'previous_price': round(prev_prev_day_price, 2),
+                            'percent_change': round(percent_change, 2),
+                            'as_of_date': last_trading_date,
+                            'market_status': 'Closed' if market_closed else 'Open'
                         }
                     else:
-                        changes[symbol] = {
-                            'error': 'Insufficient data'
-                        }
+                        changes[symbol] = {'error': 'Insufficient data'}
                 except Exception as e:
-                    changes[symbol] = {
-                        'error': str(e)
-                    }
+                    changes[symbol] = {'error': str(e)}
             
             return JsonResponse(changes)
+
+        elif data_type == 'individual':
+            mode = request.GET.get('mode', 'historical')
+            
+            if mode == 'historical':
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=31)
+                
+                result = {}
+                for symbol in symbols:
+                    try:
+                        data = yf.download(symbol, start=start_date, end=end_date, interval='1d', progress=False)
+                        
+                        if not market_closed:
+                            data = data[:-1]
+                        
+                        stock_data = []
+                        for date, row in data.iterrows():
+                            stock_data.append({
+                                'date': date.strftime('%Y-%m-%d'),
+                                'open': float(row['Open'].iloc[0] if isinstance(row['Open'], pd.Series) else row['Open']),
+                                'high': float(row['High'].iloc[0] if isinstance(row['High'], pd.Series) else row['High']),
+                                'low': float(row['Low'].iloc[0] if isinstance(row['Low'], pd.Series) else row['Low']),
+                                'close': float(row['Close'].iloc[0] if isinstance(row['Close'], pd.Series) else row['Close']),
+                                'volume': int(row['Volume'].iloc[0] if isinstance(row['Volume'], pd.Series) else row['Volume'])
+                            })
+                        
+                        result[symbol] = {
+                            'data': stock_data[-30:],
+                            'last_updated': stock_data[-1]['date'],
+                            'market_status': 'Closed' if market_closed else 'Open'
+                        }
+                    except Exception as e:
+                        result[symbol] = {'error': str(e)}
+                
+                return JsonResponse(result)
+            
+            elif mode == 'daily':
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=5)
+                
+                result = {}
+                for symbol in symbols:
+                    try:
+                        data = yf.download(symbol, start=start_date, end=end_date, interval='1d', progress=False)
+                        
+                        if not market_closed:
+                            data = data[:-1]
+                        
+                        if len(data) >= 2:
+                            last_row = data.iloc[-1]
+                            prev_row = data.iloc[-2]
+                            
+                            # Get values using iloc[0]
+                            current_close = float(last_row['Close'].iloc[0] if isinstance(last_row['Close'], pd.Series) else last_row['Close'])
+                            current_open = float(last_row['Open'].iloc[0] if isinstance(last_row['Open'], pd.Series) else last_row['Open'])
+                            prev_close = float(prev_row['Close'].iloc[0] if isinstance(prev_row['Close'], pd.Series) else prev_row['Close'])
+                            
+                            day_change = current_close - current_open
+                            day_change_percent = (day_change / current_open) * 100
+                            prev_day_change = current_close - prev_close
+                            prev_day_change_percent = (prev_day_change / prev_close) * 100
+                            
+                            result[symbol] = {
+                                'current_price': current_close,
+                                'open': float(last_row['Open'].iloc[0] if isinstance(last_row['Open'], pd.Series) else last_row['Open']),
+                                'high': float(last_row['High'].iloc[0] if isinstance(last_row['High'], pd.Series) else last_row['High']),
+                                'low': float(last_row['Low'].iloc[0] if isinstance(last_row['Low'], pd.Series) else last_row['Low']),
+                                'volume': int(last_row['Volume'].iloc[0] if isinstance(last_row['Volume'], pd.Series) else last_row['Volume']),
+                                'day_change': round(day_change, 2),
+                                'day_change_percent': round(day_change_percent, 2),
+                                'prev_day_change': round(prev_day_change, 2),
+                                'prev_day_change_percent': round(prev_day_change_percent, 2),
+                                'as_of_date': data.index[-1].strftime('%Y-%m-%d'),
+                                'market_status': 'Closed' if market_closed else 'Open'
+                            }
+                        else:
+                            result[symbol] = {'error': 'Insufficient data'}
+                    except Exception as e:
+                        result[symbol] = {'error': str(e)}
+                
+                return JsonResponse(result)
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)

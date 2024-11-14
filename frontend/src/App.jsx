@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage';
 import LogoutPage from './pages/LogoutPage';
 import HomeView from './components/views/HomeView';
 import PortfolioView from './components/views/PortfolioView';
+import WatchlistView from './components/views/WatchlistView';
 import AnalyticsView from './components/views/AnalyticsView';
 import SettingsView from './components/views/SettingsView';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -21,6 +22,7 @@ function App() {
       <Route element={<ProtectedRoute><HomePage /></ProtectedRoute>}>
         <Route path="/home" element={<HomeView />} />
         <Route path="/portfolio" element={<PortfolioView />} />
+        <Route path="/watchlist" element={<WatchlistView />} />
         <Route path="/analytics" element={<AnalyticsView />} />
         <Route path="/settings" element={<SettingsView />} />
       </Route>
