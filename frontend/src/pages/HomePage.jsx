@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 
 import HomeView from '../components/views/HomeView';
 import PortfolioView from '../components/views/PortfolioView';
@@ -11,6 +9,7 @@ import AnalyticsView from '../components/views/AnalyticsView';
 import SettingsView from '../components/views/SettingsView';
 
 const HomePage = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [activeMenu, setActiveMenu] = useState('home');
@@ -92,9 +91,19 @@ const HomePage = () => {
     }
   };
 
+  // Get current active menu from path
+  const getActiveMenu = () => {
+    const path = location.pathname.split('/')[1];
+    return path || 'home';
+  };
+
+  // Update navigation buttons to use proper routing
+  const handleNavigation = (route) => {
+    navigate(`/${route}`);
+  };
+
   return (
     <div className={`flex min-h-screen transition-opacity duration-1000 ${fadeOutLogout ? 'opacity-0' : 'opacity-100'}`}>
-      <ToastContainer position="top-center" limit={1} theme="light" />
       <aside className="w-16 flex flex-col items-center py-4 border-r border-white/20 bg-gradient-to-b from-blue-500 via-blue-600 to-blue-500 animate-gradient">
         <div className="mb-6">
           <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -106,9 +115,9 @@ const HomePage = () => {
 
         <div className="flex-1 flex flex-col items-center space-y-6">
           <button
-            onClick={() => setActiveMenu('home')}
+            onClick={() => handleNavigation('home')}
             className={`p-2 rounded-lg text-white transition-colors ${
-              activeMenu === 'home' ? 'bg-white/20' : 'hover:bg-white/10'
+              getActiveMenu() === 'home' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,9 +126,9 @@ const HomePage = () => {
           </button>
 
           <button
-            onClick={() => setActiveMenu('portfolio')}
+            onClick={() => handleNavigation('portfolio')}
             className={`p-2 rounded-lg text-white transition-colors ${
-              activeMenu === 'portfolio' ? 'bg-white/20' : 'hover:bg-white/10'
+              getActiveMenu() === 'portfolio' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,9 +137,9 @@ const HomePage = () => {
           </button>
 
           <button
-            onClick={() => setActiveMenu('analytics')}
+            onClick={() => handleNavigation('analytics')}
             className={`p-2 rounded-lg text-white transition-colors ${
-              activeMenu === 'analytics' ? 'bg-white/20' : 'hover:bg-white/10'
+              getActiveMenu() === 'analytics' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,9 +149,9 @@ const HomePage = () => {
         </div>
 
         <button
-          onClick={() => setActiveMenu('settings')}
+          onClick={() => handleNavigation('settings')}
           className={`p-2 rounded-lg text-white transition-colors mb-4 ${
-            activeMenu === 'settings' ? 'bg-white/20' : 'hover:bg-white/10'
+            getActiveMenu() === 'settings' ? 'bg-white/20' : 'hover:bg-white/10'
           }`}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -202,7 +211,7 @@ const HomePage = () => {
         
         
         <main className="flex-1 p-4 bg-gray-50 h-[calc(100vh-4rem)] overflow-auto">
-          {renderActiveView()}
+          <Outlet />
         </main>
       </div>
     </div>
