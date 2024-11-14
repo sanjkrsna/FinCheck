@@ -8,7 +8,7 @@ const LogoutPage = () => {
   const navigate = useNavigate();
   const { setIsAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [fadeOut, setFadeOut] = useState(false); // State for fade-out effect
+  const [fadeOut, setFadeOut] = useState(false);
 
   useEffect(() => {
     const logout = async () => {
@@ -33,10 +33,22 @@ const LogoutPage = () => {
         sessionStorage.removeItem('accessToken');
         sessionStorage.removeItem('refreshToken');
         
-        // Clear all cached market data
-        localStorage.removeItem('marketData');
-        localStorage.removeItem('newsData');
-        localStorage.removeItem('worldMarketsData');
+        // Clear ALL market-related caches
+        const cacheKeys = [
+          'marketData',
+          'newsData',
+          'worldMarketsData',
+          'watchlistData',
+          'userWatchlist',
+          'historicalMarketData',
+          'worldMarketsData',
+          'watchlistData'
+        ];
+        
+        cacheKeys.forEach(key => {
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+        });
         
         // Update auth state
         setIsAuthenticated(false);
