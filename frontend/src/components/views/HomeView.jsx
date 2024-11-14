@@ -62,8 +62,6 @@ const HomeView = () => {
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [watchlist, setWatchlist] = useState([
-    'SENSEX',
-    'NIFTY 50',
     'Maruti Suzuki',
     'Hero Motocorp',
     'Bajaj Auto',
