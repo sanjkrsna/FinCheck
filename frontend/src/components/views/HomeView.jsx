@@ -72,6 +72,8 @@ const HomeView = () => {
   const [historicalData, setHistoricalData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [worldMarketsData, setWorldMarketsData] = useState({});
+  const [loadingAnimation, setLoadingAnimation] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const xScale = useMemo(() => {
     if (!historicalData.length || !containerWidth) return null;
@@ -171,26 +173,30 @@ const HomeView = () => {
     const cacheDuration = 2 * 60 * 60 * 1000;
     
     try {
+      setLoadingAnimation(true);
+      setLoadError(false);
+      
+      // Simulate initial loading animation
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
       const cachedData = localStorage.getItem(cacheKey);
       if (cachedData && !forceRefresh) {
         const { data, timestamp } = JSON.parse(cachedData);
         if (Date.now() - timestamp < cacheDuration) {
-          console.log('Using cached data:', data);
           const processedData = data.map(item => ({
             ...item,
             date: new Date(item.date)
           }));
           setHistoricalData(processedData);
           setIsLoading(false);
+          setLoadingAnimation(false);
           return;
         }
       }
 
       setIsLoading(true);
-      const url = `http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical&t=${Date.now()}`;
-      console.log('Fetching from:', url);
+      const response = await fetch(`http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical&t=${Date.now()}`);
       
-      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -230,9 +236,11 @@ const HomeView = () => {
       setHistoricalData(processedData);
     } catch (error) {
       console.error('Error fetching market data:', error);
+      setLoadError(true);
       localStorage.removeItem(cacheKey);
     } finally {
       setIsLoading(false);
+      setLoadingAnimation(false);
     }
   }, []);
 
@@ -303,17 +311,22 @@ const HomeView = () => {
     const cacheKey = 'newsData';
     const cacheDuration = 2 * 60 * 60 * 1000;
     
-    const cachedNews = localStorage.getItem(cacheKey);
-    if (cachedNews && !forceRefresh) {
-      const { data, timestamp } = JSON.parse(cachedNews);
-      if (Date.now() - timestamp < cacheDuration) {
-        setNews(data);
-        return;
-      }
-    }
-
     try {
       setNewsLoading(true);
+      
+      // Add initial loading delay to match chart animation
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      const cachedNews = localStorage.getItem(cacheKey);
+      if (cachedNews && !forceRefresh) {
+        const { data, timestamp } = JSON.parse(cachedNews);
+        if (Date.now() - timestamp < cacheDuration) {
+          setNews(data);
+          setNewsLoading(false);
+          return;
+        }
+      }
+
       const twoDaysAgo = new Date();
       twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
       twoDaysAgo.setHours(0, 0, 0, 0);
@@ -368,6 +381,7 @@ const HomeView = () => {
       }
     } catch (error) {
       console.error('Error fetching news:', error);
+      setNews([]); // Clear news on error
     } finally {
       setNewsLoading(false);
     }
@@ -477,11 +491,23 @@ const HomeView = () => {
           onMouseMove={handleTooltip}
           onMouseLeave={() => setTooltipData(null)}
         >
-          {!isReady ? (
+          {loadingAnimation ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center space-y-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="text-gray-400">Loading market data...</div>
+              </div>
+            </div>
+          ) : loadError ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-red-500">
+                Error loading market data. Please try again later.
+              </div>
+            </div>
+          ) : !isReady ? (
             <div className="h-full flex items-center justify-center">
-              <div className="animate-pulse text-gray-400">
-                {isLoading ? 'Loading market data...' : 
-                 !historicalData.length ? 'No data available' :
+              <div className="text-gray-400">
+                {!historicalData.length ? 'No data available' :
                  !containerWidth ? 'Initializing chart...' :
                  'Preparing visualization...'}
               </div>
@@ -612,13 +638,20 @@ const HomeView = () => {
 
       <div className="col-span-4 bg-white rounded-lg shadow p-4">
         <h2 className="text-lg font-semibold mb-2">Market News</h2>
-        <div className="space-y-3 max-h-[200px] overflow-auto">
+        <div className="relative h-[200px] overflow-auto">
           {newsLoading ? (
-            <div className="flex justify-center items-center h-full">
-              <div className="animate-pulse text-gray-400">Loading news...</div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center space-y-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="text-gray-400">Loading news...</div>
+              </div>
             </div>
           ) : news.length === 0 ? (
-            <div className="text-gray-500 text-sm">No recent news available</div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-red-500">
+                No news
+              </div>
+            </div>
           ) : (
             news.map((item, index) => (
               <a 
