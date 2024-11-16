@@ -5,6 +5,7 @@ import { scaleTime, scaleLinear } from '@visx/scale';
 import { Group } from '@visx/group';
 import { LinearGradient } from '@visx/gradient';
 import { bisector } from 'd3-array';
+import { debounce } from 'lodash';
 
 const market_data = {
   indices: {
@@ -19,9 +20,12 @@ const market_data = {
     'BSE MidCap': '^BSEMC',
   },
   manufacturing_companies: {
+    'Maruti Suzuki': 'MARUTI.NS',
+    'Hero Motocorp': 'HEROMOTOCO.NS',
+    'Bajaj Auto': 'BAJAJ-AUTO.NS',
+    'TVS Motor Co': 'TVSMOTOR.NS',
     'Accelya Solution': 'ACCELYA.NS',
     'Ashok Leyland': 'ASHOKLEY.NS',
-    'Bajaj Auto': 'BAJAJ-AUTO.NS',
     'Bombay Dyeing': 'BOMDYEING.NS',
     'Boss Packaging': 'BOSS-ST.NS', 
     'CG Power & Ind': 'CGPOWER.NS',
@@ -32,24 +36,70 @@ const market_data = {
     'Godawari Power': 'GPIL.BO',
     'Godrej Industrie': 'GODREJIND.NS',
     'GTL Infra': 'GTLINFRA.NS',
-    'Hero Motocorp': 'HEROMOTOCO.NS',
     'Indian Link Ch': 'INDIANLINK.BO',
     'Kamdhenu': 'KAMDHENU.NS',
     'Kronox Lab': 'KRONO.NS',
-    'Maruti Suzuki': 'MARUTI.NS',
     'Omansh Enterpri': 'OMANSH.BO',
     'Petro Carbon': 'PETRO.BO',
     'Relicab Cable': 'RELCABLE.BO',
     'Shreyans Inds': 'SHREYANIND.NS',
     'SpiceJet': 'SPICEJET.NS',
     'Suzlon Energy': 'SUZLON.NS',
-    'TVS Motor Co': 'TVSMOTOR.NS',
-    'U. Y. Fincorp': 'UYFINCORP.BO',
     'UPL': 'UPL.NS',
     'Vodafone Idea': 'IDEA.NS',
     'Wanbury': 'WANBURY.NS',
     'Yes Bank': 'YESBANK.NS',
   }
+};
+
+const useWatchlistData = (watchlist) => {
+  const [watchlistData, setWatchlistData] = useState({});
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [watchlistError, setWatchlistError] = useState(null);
+
+  const getSymbol = useCallback((name) => {
+    const symbol = market_data.indices[name] || market_data.manufacturing_companies[name];
+    console.log(`Symbol mapping for ${name}:`, symbol); // Debug log
+    return symbol;
+  }, []);
+
+  const debouncedFetch = useCallback(
+    debounce(async () => {
+      try {
+        setWatchlistLoading(true);
+        setWatchlistError(null);
+
+        const symbols = watchlist.map(item => getSymbol(item)).filter(Boolean);
+        console.log('Fetching data for symbols:', symbols); // Debug log
+
+        if (symbols.length === 0) return;
+
+        const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
+        const response = await fetch(
+          `http://localhost:8000/api/stock-data/?${queryString}&type=individual&mode=daily`
+        );
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        console.log('API Response:', data);
+        setWatchlistData(data);
+      } catch (error) {
+        console.error('Error fetching watchlist data:', error);
+        setWatchlistError(error);
+      } finally {
+        setWatchlistLoading(false);
+      }
+    }, 1000),
+    [watchlist, getSymbol]
+  );
+
+  useEffect(() => {
+    debouncedFetch();
+    return () => debouncedFetch.cancel();
+  }, [debouncedFetch]);
+
+  return { watchlistData, watchlistLoading, watchlistError };
 };
 
 const HomeView = () => {
@@ -61,19 +111,16 @@ const HomeView = () => {
   const margin = { top: 0, right: 0, bottom: 0, left: 0 };
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
-  const [watchlist, setWatchlist] = useState([
+  const [watchlist] = useState([
     'Maruti Suzuki',
     'Hero Motocorp',
-    'Bajaj Auto',
-    'TVS Motor Co'
+    'Bajaj Auto'
   ]);
   const [historicalData, setHistoricalData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [worldMarketsData, setWorldMarketsData] = useState({});
   const [loadingAnimation, setLoadingAnimation] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [watchlistData, setWatchlistData] = useState({});
-  const [watchlistLoading, setWatchlistLoading] = useState(true);
 
   const xScale = useMemo(() => {
     if (!historicalData.length || !containerWidth) return null;
@@ -298,95 +345,35 @@ const HomeView = () => {
     return 'Just now';
   };
 
-  const fetchAndCacheNews = useCallback(async (forceRefresh = false) => {
-    const cacheKey = 'newsData';
-    const cacheDuration = 2 * 60 * 60 * 1000;
-    
-    try {
-      setNewsLoading(true);
-      
-      // Add initial loading delay to match chart animation
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      const cachedNews = localStorage.getItem(cacheKey);
-      if (cachedNews && !forceRefresh) {
-        const { data, timestamp } = JSON.parse(cachedNews);
-        if (Date.now() - timestamp < cacheDuration) {
-          setNews(data);
-          setNewsLoading(false);
-          return;
-        }
-      }
+  // useEffect(() => {
+  //   const fetchNews = async () => {
+  //     try {
+  //       setNewsLoading(true);
+  //       const response = await fetch('http://localhost:8000/api/-news/');
+        
+  //       if (!response.ok) {
+  //         throw new Error(`HTTP error! status: ${response.status}`);
+  //       }
+        
+  //       const data = await response.json();
+  //       console.log('News API response:', data); // Debug log
+        
+  //       if (Array.isArray(data)) {
+  //         setNews(data);
+  //       } else {
+  //         console.error('Unexpected news data format:', data);
+  //         setNews([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching news:', error);
+  //       setNews([]);
+  //     } finally {
+  //       setNewsLoading(false);
+  //     }
+  //   };
 
-      const twoDaysAgo = new Date();
-      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-      twoDaysAgo.setHours(0, 0, 0, 0);
-
-      const domains = [
-        'moneycontrol.com',
-        'economictimes.indiatimes.com',
-        'livemint.com',
-        'business-standard.com',
-        'financialexpress.com',
-        'businesstoday.in',
-        'cnbctv18.com'
-      ].join(',');
-
-      const query = encodeURIComponent(
-        '(market OR stock OR sensex OR nifty OR bse OR nse OR shares OR trading)'
-      );
-
-      console.log('Fetching news...'); // Debug log
-
-      const response = await fetch(
-        `https://newsapi.org/v2/everything?` +
-        `domains=${domains}&` +
-        `q=${query}&` +
-        `language=en&` +
-        `from=${twoDaysAgo.toISOString()}&` +
-        `sortBy=publishedAt&` +
-        `pageSize=100`,
-        {
-          headers: {
-            'X-Api-Key': 'hi'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('News API Error:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('News API response:', data); // Debug log
-
-      if (data.status === 'ok' && data.articles) {
-        const sortedNews = data.articles
-          .filter(article => article.title && article.description) // Filter out invalid articles
-          .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-        setNews(sortedNews);
-      } else {
-        console.error('Invalid news data format:', data);
-      }
-    } catch (error) {
-      console.error('Error fetching news:', error);
-      setNews([]); // Clear news on error
-    } finally {
-      setNewsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAndCacheNews();
-    const interval = setInterval(() => fetchAndCacheNews(true), 2 * 60 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchAndCacheNews]);
-
-  const getSymbol = (name) => {
-    return market_data.indices[name] || market_data.manufacturing_companies[name];
-  };
+  //   fetchNews();
+  // }, []); // Empty dependency array means this runs once on component mount
 
   const fetchWorldMarkets = useCallback(async (forceRefresh = false) => {
     const cacheKey = 'worldMarketsData';
@@ -488,36 +475,74 @@ const HomeView = () => {
     return 'Market Open';
   };
 
-  const fetchWatchlistData = useCallback(async () => {
-    try {
-      setWatchlistLoading(true);
-      
-      // Get symbols for watchlist items
-      const symbols = watchlist.map(item => getSymbol(item)).filter(Boolean);
-      
-      if (symbols.length === 0) return;
-      
-      const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
-      const response = await fetch(
-        `http://localhost:8000/api/stock-data/?${queryString}&type=individual&mode=daily`
-      );
+  const { watchlistData, watchlistLoading, watchlistError } = useWatchlistData(watchlist);
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      
-      const data = await response.json();
-      setWatchlistData(data);
-    } catch (error) {
-      console.error('Error fetching watchlist data:', error);
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }, [watchlist]);
+  const getSymbol = (name) => {
+    return market_data.indices[name] || market_data.manufacturing_companies[name];
+  };
 
-  useEffect(() => {
-    fetchWatchlistData();
-    const interval = setInterval(fetchWatchlistData, 2 * 60 * 60 * 1000); // Refresh every 2 hours
-    return () => clearInterval(interval);
-  }, [fetchWatchlistData]);
+  const renderWatchlistItem = (displayName) => {
+    const symbol = getSymbol(displayName);
+    const data = symbol ? watchlistData[symbol] : null;
+    
+    console.log(`Rendering ${displayName}:`, { 
+      symbol, 
+      hasData: !!data,
+      data 
+    }); // Enhanced debug log
+
+    return (
+      <div key={displayName} className="bg-gray-50 p-3 rounded-lg">
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-medium">{displayName}</span>
+          {data && (
+            <span className={`text-xs font-medium ${
+              data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
+            }`}>
+              {data.day_change_percent >= 0 ? '+' : ''}
+              {data.day_change_percent.toFixed(2)}%
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-600">
+          {watchlistLoading ? (
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+              <div className="h-3 bg-gray-200 rounded w-16 mt-2"></div>
+            </div>
+          ) : data ? (
+            <>
+              <div className="flex justify-between items-center">
+                <span>₹{data.current_price.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2,
+                  minimumFractionDigits: 2
+                })}</span>
+                <span className={`text-xs ${
+                  data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
+                }`}>
+                  {data.day_change >= 0 ? '▲' : '▼'} 
+                  ₹{Math.abs(data.day_change).toFixed(2)}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                <span>H: ₹{data.high.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+                <span className="mx-2">|</span>
+                <span>L: ₹{data.low.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+              </div>
+            </>
+          ) : (
+            <span className="text-xs text-gray-400">
+              {symbol || 'Symbol not found'}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="grid grid-cols-12 gap-4">
@@ -700,9 +725,7 @@ const HomeView = () => {
             </div>
           ) : news.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-red-500">
-                No news
-              </div>
+              <div className="text-gray-500">No news available</div>
             </div>
           ) : (
             news.map((item, index) => (
@@ -719,26 +742,20 @@ const HomeView = () => {
                       item.category === 'BSE' ? 'bg-blue-100 text-blue-800' :
                       item.category === 'NIFTY' ? 'bg-green-100 text-green-800' :
                       item.category === 'NSE' ? 'bg-purple-100 text-purple-800' :
-                      item.category === 'Manufacturing' ? 'bg-orange-100 text-orange-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
                       {item.category}
                     </span>
                     <span className="text-xs text-gray-500">
-                      {getTimeAgo(item.publishedAt)}
+                      {new Date(item.publishedAt).toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-sm font-medium mb-1 line-clamp-2">
                     {item.title}
                   </p>
-                  {item.description && (
-                    <p className="text-xs text-gray-600 line-clamp-2">
-                      {item.description}
-                    </p>
-                  )}
                   <div className="flex justify-between items-center mt-1">
                     <span className="text-xs text-blue-600">
-                      {item.source.name}
+                      {item.source}
                     </span>
                     <span className="text-xs text-gray-400 hover:text-blue-500">
                       Read more →
@@ -792,7 +809,7 @@ const HomeView = () => {
 
       <div className="col-span-8 bg-white rounded-lg shadow p-4">
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-lg font-semibold">Your Watchlist</h2>
+          <h2 className="text-lg font-semibold">Available Stocks</h2>
           <div className="flex items-center space-x-2">
             <span className="text-xs text-gray-500">Last market close</span>
             {watchlistLoading && (
@@ -801,51 +818,7 @@ const HomeView = () => {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 max-h-[150px] overflow-auto">
-          {watchlist.map((item) => {
-            const symbol = getSymbol(item);
-            const data = symbol ? watchlistData[symbol] : null;
-
-            return (
-              <div key={item} className="bg-gray-50 p-3 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium">{item}</span>
-                  {data && (
-                    <span className={`text-xs font-medium ${
-                      data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`}>
-                      {data.day_change_percent >= 0 ? '+' : ''}
-                      {data.day_change_percent?.toFixed(2)}%
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-600">
-                  {data ? (
-                    <>
-                      <div className="flex justify-between items-center">
-                        <span>₹{data.current_price?.toLocaleString('en-IN')}</span>
-                        <span className={`text-xs ${
-                          data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
-                        }`}>
-                          {data.day_change >= 0 ? '▲' : '▼'} 
-                          ₹{Math.abs(data.day_change).toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        <span>H: ₹{data.high?.toLocaleString('en-IN')}</span>
-                        <span className="mx-2">|</span>
-                        <span>L: ₹{data.low?.toLocaleString('en-IN')}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-xs text-gray-400">Loading...</span>
-                  )}
-                  <span className="text-xs text-gray-400 block mt-1">
-                    {symbol}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          {watchlist.map(item => renderWatchlistItem(item))}
         </div>
       </div>
     </div>
