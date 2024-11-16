@@ -9,4 +9,5 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(),name='refresh_token'),
     path('user/', UserInfoAPIView.as_view(),name="user_info"),
     path('stock-data/', stock_data, name='stock_data'),
+    path('stock-details/<str:stock_name>/', get_stock_details, name='stock_details'),
 ]

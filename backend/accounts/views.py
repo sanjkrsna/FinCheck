@@ -11,6 +11,8 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import pytz
 import pandas as pd
+from django.http import HttpRequest
+from django.http import QueryDict
 
 
 class UserRegistrationAPIView(GenericAPIView):
@@ -88,10 +90,6 @@ def stock_data(request):
     current_minute = current_time.minute
     is_weekend = current_time.weekday() >= 5
     
-    # Market is closed if:
-    # 1. It's after 3:30 PM
-    # 2. It's before 9:15 AM
-    # 3. It's a weekend
     market_closed = (
         is_weekend or 
         (current_hour > 15 or (current_hour == 15 and current_minute >= 30)) or
@@ -262,6 +260,132 @@ def stock_data(request):
                 return JsonResponse(result)
 
     except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+def get_stock_details(request, stock_name):
+    try:
+        # Map stock names to symbols
+        stock_symbols = {
+            'Maruti Suzuki': 'MARUTI.NS',
+            'Hero Motocorp': 'HEROMOTOCO.NS',
+            'Bajaj Auto': 'BAJAJ-AUTO.NS',
+            'TVS Motor Co': 'TVSMOTOR.NS'
+        }
+        
+        symbol = stock_symbols.get(stock_name)
+        if not symbol:
+            return JsonResponse({'error': 'Invalid stock name'}, status=400)
+
+        # Get historical data for the past 30 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        try:
+            stock = yf.Ticker(symbol)
+            hist_data = stock.history(start=start_date, end=end_date)
+            
+            historical_data = [
+                {
+                    'date': index.strftime('%Y-%m-%d'),
+                    'price': float(row['Close']),
+                    'volume': int(row['Volume'])
+                }
+                for index, row in hist_data.iterrows()
+            ]
+        except Exception as e:
+            print(f"Error fetching historical data: {e}")
+            historical_data = []
+
+        # Get current market data using existing stock data function
+        from django.http import HttpRequest
+        from django.http import QueryDict
+        
+        market_request = HttpRequest()
+        market_request.method = 'GET'
+        query_dict = QueryDict('', mutable=True)
+        query_dict.setlist('symbols', [symbol])
+        query_dict['type'] = 'individual'
+        query_dict['mode'] = 'daily'
+        market_request.GET = query_dict
+        
+        market_response = stock_data(market_request)
+        market_data = market_response.content.decode('utf-8')
+        import json
+        market_data = json.loads(market_data)
+        market_info = market_data[symbol]
+
+        # Get the rest of your data
+        base_path = r'C:\Users\sanjkrsna\Desktop\FSD Project\New\backend\updated_datas'
+
+        # Get forecast data
+        forecast_df = pd.read_csv(f'{base_path}/combined_timemixer_forecast.csv')
+        forecast_data = forecast_df[['Date', symbol]].sort_values('Date').to_dict('records')
+
+        # Get sentiment data
+        sentiment_df = pd.read_csv(f'{base_path}/sentiment_analysis.csv')
+        sentiment_row = sentiment_df[sentiment_df['Company'] == stock_name.split()[0]].iloc[0]
+        sentiment_data = {
+            'daily_sentiments': {
+                col: sentiment_row[col] 
+                for col in sentiment_df.columns 
+                if col not in ['Company', 'Classification']
+            },
+            'classification': sentiment_row['Classification']
+        }
+
+        # Get financial data
+        financial_df = pd.read_csv(f'{base_path}/company_weighted_scores_pivoted_with_classification.csv')
+        financial_row = financial_df[financial_df['Company'] == stock_name].iloc[0]
+        financial_data = {
+            'yearly_scores': {
+                col.replace('Weighted_Score_', ''): financial_row[col]
+                for col in financial_df.columns 
+                if col.startswith('Weighted_Score_') and pd.notna(financial_row[col])
+            },
+            'classification': financial_row['Classification'],
+            'current_score': financial_row['Weighted_Score_2024']
+        }
+
+        # Get recommendation
+        recommendation_df = pd.read_csv(f'{base_path}/recommendation.csv')
+        recommendation_data = recommendation_df[recommendation_df['Company'] == stock_name].iloc[0].to_dict()
+
+        response_data = {
+            'market': {
+                'current_price': market_info['current_price'],
+                'open': market_info['open'],
+                'high': market_info['high'],
+                'low': market_info['low'],
+                'volume': market_info['volume'],
+                'day_change': market_info['day_change'],
+                'day_change_percent': market_info['day_change_percent'],
+                'as_of_date': market_info.get('as_of_date', end_date.strftime('%Y-%m-%d')),
+                'market_status': market_info.get('market_status', 'Closed'),
+                'historical_data': historical_data
+            },
+            'forecast': {
+                'data': forecast_data,
+                'projected_price': forecast_data[-1][symbol],
+                'forecast_change_percent': round(((forecast_data[-1][symbol] - forecast_data[0][symbol]) / forecast_data[0][symbol]) * 100, 2),
+                'forecast_period': {
+                    'start': forecast_data[0]['Date'],
+                    'end': forecast_data[-1]['Date']
+                }
+            },
+            'sentiment': sentiment_data,
+            'financial': financial_data,
+            'recommendation': {
+                'action': recommendation_data['Recommendation'],
+                'rationale': recommendation_data['Rationale']
+            }
+        }
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        print(f"Error in get_stock_details: {e}")
         return JsonResponse({'error': str(e)}, status=400)
 
 
