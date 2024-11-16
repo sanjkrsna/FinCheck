@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 
 // Add your News API key here
-const NEWS_API_KEY = '';
+const NEWS_API_KEY = 'a8702de48e714021a3f00bf5fd59b962';
 
 const StockDashboard = () => {
   const { stockName } = useParams();
@@ -39,7 +39,7 @@ const StockDashboard = () => {
         setNewsLoading(true);
         const response = await fetch(
           `https://newsapi.org/v2/everything?` + 
-          `q=${encodeURIComponent(stockName)}%20stock%20NSE%20India&` +
+          `q=${encodeURIComponent(stockName)}%20stock&` +
           `apiKey=${NEWS_API_KEY}&` +
           `language=en&` +
           `sortBy=publishedAt&` +
