@@ -195,12 +195,7 @@ const ForgotPassword = () => {
         {step === 4 && (
           <div className="text-center">
             <p className="text-sm text-gray-600">
-              Password reset successful. You can now
-              <Link to="/login" className="text-blue-600 hover:text-blue-800 hover:underline ml-1">
-                login
-              </Link>
-              with your new password.
-            </p>
+              Password reset successful. You can now login with your new password.</p>
           </div>
         )}
 
