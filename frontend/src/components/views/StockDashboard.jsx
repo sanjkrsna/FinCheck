@@ -358,6 +358,7 @@ const StockDashboard = () => {
                 showNifty={false}
                 colors={{ primary: "#60a5fa" }}
                 stockName={stockName}
+                onRefresh={() => fetchStockDetails()}
               />
             </div>
           </div>
