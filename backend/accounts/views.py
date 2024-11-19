@@ -317,7 +317,7 @@ def get_stock_details(request, stock_name):
         market_info = market_data[symbol]
 
         # Get the rest of your data
-        base_path = r'C:\Users\sanjkrsna\Desktop\FSD Project\New\backend\updated_datas'
+        base_path = './updated_datas'
 
         # Get forecast data
         forecast_df = pd.read_csv(f'{base_path}/combined_timemixer_forecast.csv')

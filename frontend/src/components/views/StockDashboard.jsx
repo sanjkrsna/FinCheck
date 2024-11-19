@@ -1,12 +1,135 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
 } from 'recharts';
+import MarketAreaChart from '../charts/MarketAreaChart';
 
 // Add your News API key here
 const NEWS_API_KEY = 'a8702de48e714021a3f00bf5fd59b962';
+
+const ForecastChart = ({ data }) => {
+  const formattedData = data.map(item => ({
+    date: new Date(item.Date),
+    price: item[Object.keys(item)[1]]
+  })).sort((a, b) => a.date - b.date);
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <LineChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.1}/>
+          </linearGradient>
+        </defs>
+        <XAxis 
+          dataKey="date" 
+          tickFormatter={(date) => {
+            return new Date(date).toLocaleDateString('en-US', { 
+              month: 'numeric',
+              day: 'numeric'
+            });
+          }}
+          tick={{ fontSize: 11, fill: '#6b7280' }}
+          axisLine={{ stroke: '#e5e7eb' }}
+          tickLine={{ stroke: '#e5e7eb' }}
+          interval={4}  // Show fewer ticks
+        />
+        <YAxis 
+          tickFormatter={(value) => `₹${(value/1000).toFixed(0)}K`}
+          tick={{ fontSize: 11, fill: '#6b7280' }}
+          axisLine={{ stroke: '#e5e7eb' }}
+          tickLine={{ stroke: '#e5e7eb' }}
+          width={60}
+        />
+        <CartesianGrid stroke="#f3f4f6" />
+        <Tooltip 
+          formatter={(value) => [`₹${value.toLocaleString()}`, 'Forecast']}
+          labelFormatter={(date) => new Date(date).toLocaleDateString()}
+          contentStyle={{ 
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '8px 12px',
+            border: '1px solid #e5e7eb',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+          }}
+        />
+        <Line
+          type="monotone"
+          dataKey="price"
+          stroke="#4f46e5"
+          strokeWidth={2}
+          dot={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+};
+
+const FinancialScoreChart = ({ data }) => {
+  const formattedData = Object.entries(data).map(([year, score]) => ({
+    year: parseInt(year),
+    score
+  })).sort((a, b) => a.year - b.year);
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <LineChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke="#f3f4f6" />
+        <XAxis 
+          dataKey="year"
+          tick={{ fontSize: 11, fill: '#6b7280' }}
+          axisLine={{ stroke: '#e5e7eb' }}
+          tickLine={{ stroke: '#e5e7eb' }}
+        />
+        <YAxis 
+          domain={[0, 6]}
+          ticks={[0, 2, 4, 6]}
+          tick={{ fontSize: 11, fill: '#6b7280' }}
+          axisLine={{ stroke: '#e5e7eb' }}
+          tickLine={{ stroke: '#e5e7eb' }}
+          width={30}
+        />
+        <Tooltip
+          formatter={(value) => [value.toFixed(2), 'Score']}
+          labelFormatter={(year) => `Year ${year}`}
+          contentStyle={{ 
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '8px 12px',
+            border: '1px solid #e5e7eb',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+          }}
+        />
+        <Line 
+          type="monotone" 
+          dataKey="score" 
+          stroke="#4f46e5"
+          strokeWidth={2}
+          dot={{
+            stroke: '#4f46e5',
+            strokeWidth: 2,
+            r: 3,
+            fill: 'white'
+          }}
+          activeDot={{
+            stroke: '#4f46e5',
+            strokeWidth: 2,
+            r: 5,
+            fill: '#4f46e5'
+          }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+};
 
 const StockDashboard = () => {
   const { stockName } = useParams();
@@ -70,157 +193,6 @@ const StockDashboard = () => {
       fetchNews();
     }
   }, [stockName]);
-
-  const MarketPriceChart = ({ data }) => {
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis 
-            dataKey="date" 
-            tickFormatter={(date) => new Date(date).toLocaleDateString()}
-          />
-          <YAxis 
-            tickFormatter={(value) => `₹${value.toLocaleString()}`}
-          />
-          <Tooltip 
-            formatter={(value) => [`₹${value.toLocaleString()}`, 'Price']}
-            labelFormatter={(date) => new Date(date).toLocaleDateString()}
-          />
-          <Area 
-            type="monotone" 
-            dataKey="price" 
-            stroke="#60a5fa" 
-            fillOpacity={1} 
-            fill="url(#colorPrice)" 
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    );
-  };
-
-  const ForecastChart = ({ data }) => {
-    const formattedData = data.map(item => ({
-      date: new Date(item.Date),
-      price: item[Object.keys(item)[1]]
-    })).sort((a, b) => a.date - b.date);
-
-    return (
-      <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.1}/>
-            </linearGradient>
-          </defs>
-          <XAxis 
-            dataKey="date" 
-            tickFormatter={(date) => {
-              return new Date(date).toLocaleDateString('en-US', { 
-                month: 'numeric',
-                day: 'numeric'
-              });
-            }}
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            axisLine={{ stroke: '#e5e7eb' }}
-            tickLine={{ stroke: '#e5e7eb' }}
-            interval={4}  // Show fewer ticks
-          />
-          <YAxis 
-            tickFormatter={(value) => `₹${(value/1000).toFixed(0)}K`}
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            axisLine={{ stroke: '#e5e7eb' }}
-            tickLine={{ stroke: '#e5e7eb' }}
-            width={60}
-          />
-          <CartesianGrid stroke="#f3f4f6" />
-          <Tooltip 
-            formatter={(value) => [`₹${value.toLocaleString()}`, 'Forecast']}
-            labelFormatter={(date) => new Date(date).toLocaleDateString()}
-            contentStyle={{ 
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              border: '1px solid #e5e7eb',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="price"
-            stroke="#4f46e5"
-            strokeWidth={2}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  };
-
-  const FinancialScoreChart = ({ data }) => {
-    const formattedData = Object.entries(data).map(([year, score]) => ({
-      year: parseInt(year),
-      score
-    })).sort((a, b) => a.year - b.year);
-
-    return (
-      <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid stroke="#f3f4f6" />
-          <XAxis 
-            dataKey="year"
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            axisLine={{ stroke: '#e5e7eb' }}
-            tickLine={{ stroke: '#e5e7eb' }}
-          />
-          <YAxis 
-            domain={[0, 6]}
-            ticks={[0, 2, 4, 6]}
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            axisLine={{ stroke: '#e5e7eb' }}
-            tickLine={{ stroke: '#e5e7eb' }}
-            width={30}
-          />
-          <Tooltip
-            formatter={(value) => [value.toFixed(2), 'Score']}
-            labelFormatter={(year) => `Year ${year}`}
-            contentStyle={{ 
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              border: '1px solid #e5e7eb',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-            }}
-          />
-          <Line 
-            type="monotone" 
-            dataKey="score" 
-            stroke="#4f46e5"
-            strokeWidth={2}
-            dot={{
-              stroke: '#4f46e5',
-              strokeWidth: 2,
-              r: 3,
-              fill: 'white'
-            }}
-            activeDot={{
-              stroke: '#4f46e5',
-              strokeWidth: 2,
-              r: 5,
-              fill: '#4f46e5'
-            }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  };
 
   const companyInfo = {
     'Maruti Suzuki': {
@@ -342,6 +314,11 @@ const StockDashboard = () => {
 
   const { market, forecast, sentiment, financial, recommendation } = stockData;
 
+  const formattedMarketData = market.historical_data.map(item => ({
+    date: new Date(item.date),
+    primary: item.price
+  }));
+
   return (
     <div className="h-full flex flex-col">
       {/* Top Bar */}
@@ -374,7 +351,12 @@ const StockDashboard = () => {
               <h3 className="font-semibold text-gray-800">Market Price</h3>
             </div>
             <div className="flex-1 min-h-0">
-              <MarketPriceChart data={market.historical_data || []} />
+              <MarketAreaChart 
+                data={formattedMarketData}
+                height={300}
+                showNifty={false}
+                colors={{ primary: "#60a5fa" }}
+              />
             </div>
           </div>
 

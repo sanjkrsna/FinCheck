@@ -1,11 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { AreaClosed, Line, LinePath } from '@visx/shape';
-import { curveMonotoneX } from '@visx/curve';
-import { scaleTime, scaleLinear } from '@visx/scale';
-import { Group } from '@visx/group';
-import { LinearGradient } from '@visx/gradient';
-import { bisector } from 'd3-array';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { debounce } from 'lodash';
+import MarketAreaChart from '../charts/MarketAreaChart';
 
 const market_data = {
   indices: {
@@ -51,6 +47,15 @@ const market_data = {
     'Yes Bank': 'YESBANK.NS',
   }
 };
+
+const CACHE_KEYS = {
+  HISTORICAL_DATA: 'historicalMarketData',
+  NEWS_DATA: 'newsData',
+  WORLD_MARKETS: 'worldMarketsData',
+  WATCHLIST: 'watchlistData'
+};
+
+const CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours
 
 const useWatchlistData = (watchlist) => {
   const [watchlistData, setWatchlistData] = useState({});
@@ -102,169 +107,86 @@ const useWatchlistData = (watchlist) => {
   return { watchlistData, watchlistLoading, watchlistError };
 };
 
+const NEWS_API_KEY = 'a8702de48e714021a3f00bf5fd59b962';
+
 const HomeView = () => {
-  const [data, setData] = useState([]);
-  const [tooltipData, setTooltipData] = useState(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const containerRef = useRef(null);
-  const height = 200;
-  const margin = { top: 0, right: 0, bottom: 0, left: 0 };
+  const [historicalData, setHistoricalData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingAnimation, setLoadingAnimation] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [worldMarketsData, setWorldMarketsData] = useState({});
   const [watchlist] = useState([
     'Maruti Suzuki',
     'Hero Motocorp',
     'Bajaj Auto'
   ]);
-  const [historicalData, setHistoricalData] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [worldMarketsData, setWorldMarketsData] = useState({});
-  const [loadingAnimation, setLoadingAnimation] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-
-  const xScale = useMemo(() => {
-    if (!historicalData.length || !containerWidth) return null;
-    const dates = historicalData.map(d => d.date);
-    return scaleTime({
-      range: [0, containerWidth - margin.left - margin.right],
-      domain: [Math.min(...dates), Math.max(...dates)],
-    });
-  }, [historicalData, containerWidth, margin]);
-
-  const sensexScale = useMemo(() => {
-    if (!historicalData.length) return null;
-    const values = historicalData.map(d => d.sensex).filter(Boolean);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const padding = (max - min) * 0.1;
-    
-    return scaleLinear({
-      range: [height - margin.bottom, margin.top],
-      domain: [min - padding, max + padding],
-      nice: true,
-    });
-  }, [historicalData, height, margin]);
-
-  const niftyScale = useMemo(() => {
-    if (!historicalData.length) return null;
-    const values = historicalData.map(d => d.nifty).filter(Boolean);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const padding = (max - min) * 0.1;
-    
-    return scaleLinear({
-      range: [height - margin.bottom, margin.top],
-      domain: [min - padding, max + padding],
-      nice: true,
-    });
-  }, [historicalData, height, margin]);
 
   const isReady = useMemo(() => {
-    const hasScales = xScale && sensexScale && niftyScale;
-    const hasData = !isLoading && historicalData.length > 0;
-    const hasContainer = containerWidth > 0;
-    
-    console.log('Ready check:', {
-      hasScales,
-      hasData,
-      hasContainer,
-      containerWidth,
-      dataLength: historicalData.length
-    });
+    return !isLoading && historicalData.length > 0;
+  }, [isLoading, historicalData]);
 
-    return hasScales && hasData && hasContainer;
-  }, [isLoading, historicalData, containerWidth, xScale, sensexScale, niftyScale]);
+  useEffect(() => {
+    console.log('Historical data updated:', historicalData);
+    console.log('Loading state:', isLoading);
+  }, [historicalData, isLoading]);
 
   useEffect(() => {
     if (historicalData.length > 0) {
-      console.log('Component state:', {
-        dataLength: historicalData.length,
-        containerWidth,
-        hasXScale: !!xScale,
-        hasSensexScale: !!sensexScale,
-        hasNiftyScale: !!niftyScale,
-        isReady
-      });
+      console.log('Data sample:', historicalData[0]);
+      console.log('Data length:', historicalData.length);
     }
-  }, [historicalData, containerWidth, xScale, sensexScale, niftyScale, isReady]);
-
-  useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        const newWidth = containerRef.current.offsetWidth;
-        if (newWidth !== containerWidth) {
-          setContainerWidth(newWidth);
-        }
-      }
-    };
-
-    updateWidth();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateWidth();
-    });
-
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [containerWidth]);
+  }, [historicalData]);
 
   const fetchAndCacheData = useCallback(async (forceRefresh = false) => {
-    const cacheKey = 'marketData';
-    const cacheDuration = 2 * 60 * 60 * 1000;
-    
     try {
+      // Check cache first
+      if (!forceRefresh) {
+        const cachedData = localStorage.getItem(CACHE_KEYS.HISTORICAL_DATA);
+        if (cachedData) {
+          const { data, timestamp, market_status } = JSON.parse(cachedData);
+          if (Date.now() - timestamp < CACHE_DURATION) {
+            setHistoricalData(data);
+            setLoadingAnimation(false);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
       setLoadingAnimation(true);
       setLoadError(false);
       
-      console.log('Fetching market data...'); // Debug log
-
       const response = await fetch(
-        'http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical',
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        'http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical'
       );
       
-      console.log('Response status:', response.status); // Debug log
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const jsonData = await response.json();
-      console.log('Raw API response:', jsonData); // Debug log
+      const { data, market_status } = await response.json();
       
-      if (!jsonData.data || !Array.isArray(jsonData.data)) {
-        throw new Error('Invalid data format from API');
-      }
-
-      const processedData = jsonData.data
+      const processedData = data
         .map(item => ({
           date: new Date(item.date),
-          sensex: parseFloat(item['^BSESN']),
-          nifty: parseFloat(item['^NSEI'])
+          primary: parseFloat(item['^BSESN']),
+          secondary: parseFloat(item['^NSEI'])
         }))
         .filter(item => 
           item.date instanceof Date && 
           !isNaN(item.date) && 
-          !isNaN(item.sensex) && 
-          !isNaN(item.nifty)
+          !isNaN(item.primary) && 
+          !isNaN(item.secondary)
         )
         .sort((a, b) => a.date - b.date);
 
-      console.log('Processed data points:', processedData.length); // Debug log
-      console.log('Sample processed data:', processedData[0]); // Debug log
+      localStorage.setItem(CACHE_KEYS.HISTORICAL_DATA, JSON.stringify({
+        data: processedData,
+        market_status,
+        timestamp: Date.now()
+      }));
 
       setHistoricalData(processedData);
-      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching market data:', error);
       setLoadError(true);
@@ -287,44 +209,6 @@ const HomeView = () => {
     return () => clearInterval(intervalId);
   }, [fetchAndCacheData]);
 
-  useEffect(() => {
-    if (historicalData.length > 0) {
-      console.log('First data point:', historicalData[0]);
-      console.log('Last data point:', historicalData[historicalData.length - 1]);
-      console.log('Data points:', historicalData.length);
-      console.log('Sample date type:', historicalData[0].date instanceof Date);
-    }
-  }, [historicalData]);
-
-  const getDate = d => d.date;
-  const getSensex = d => d.sensex;
-  const getNifty = d => d.nifty;
-  const bisectDate = bisector(getDate).left;
-
-  const handleTooltip = (event) => {
-    const svgElement = event.currentTarget;
-    const rect = svgElement.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-
-    const x0 = xScale.invert(x);
-    const index = bisectDate(historicalData, x0, 1);
-    const d0 = historicalData[index - 1];
-    const d1 = historicalData[index];
-    
-    if (!d0 || !d1) return;
-
-    let d = d0;
-    if (d1 && getDate(d1)) {
-      d = x0.valueOf() - getDate(d0).valueOf() > getDate(d1).valueOf() - x0.valueOf() ? d1 : d0;
-    }
-
-    if (d && !(d.date instanceof Date)) {
-      d.date = new Date(d.date);
-    }
-
-    setTooltipData(d);
-  };
-
   const getTimeAgo = (date) => {
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
     const intervals = {
@@ -345,35 +229,60 @@ const HomeView = () => {
     return 'Just now';
   };
 
-  // useEffect(() => {
-  //   const fetchNews = async () => {
-  //     try {
-  //       setNewsLoading(true);
-  //       const response = await fetch('http://localhost:8000/api/-news/');
-        
-  //       if (!response.ok) {
-  //         throw new Error(`HTTP error! status: ${response.status}`);
-  //       }
-        
-  //       const data = await response.json();
-  //       console.log('News API response:', data); // Debug log
-        
-  //       if (Array.isArray(data)) {
-  //         setNews(data);
-  //       } else {
-  //         console.error('Unexpected news data format:', data);
-  //         setNews([]);
-  //       }
-  //     } catch (error) {
-  //       console.error('Error fetching news:', error);
-  //       setNews([]);
-  //     } finally {
-  //       setNewsLoading(false);
-  //     }
-  //   };
+  useEffect(() => {
+    const fetchNews = async () => {
+      const cachedNews = localStorage.getItem(CACHE_KEYS.NEWS_DATA);
+      
+      if (cachedNews) {
+        const { data, timestamp } = JSON.parse(cachedNews);
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          setNews(data);
+          setNewsLoading(false);
+          return;
+        }
+      }
 
-  //   fetchNews();
-  // }, []); // Empty dependency array means this runs once on component mount
+      try {
+        setNewsLoading(true);
+        const response = await fetch(
+          `https://newsapi.org/v2/everything?` + 
+          `q=indian%20stock%20market%20(sensex%20OR%20nifty)&` +
+          `apiKey=${NEWS_API_KEY}&` +
+          `language=en&` +
+          `sortBy=publishedAt&` +
+          `pageSize=10`  // Limit to 10 articles
+        );
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'ok' && data.articles) {
+          const articles = data.articles.slice(0, 10);
+          
+          // Cache the news data
+          localStorage.setItem(CACHE_KEYS.NEWS_DATA, JSON.stringify({
+            data: articles,
+            timestamp: Date.now()
+          }));
+          
+          setNews(articles);
+        } else {
+          console.error('News API response format error:', data);
+          setNews([]);
+        }
+      } catch (error) {
+        console.error('Error fetching news:', error);
+        setNews([]);
+      } finally {
+        setNewsLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, []);
 
   const fetchWorldMarkets = useCallback(async (forceRefresh = false) => {
     const cacheKey = 'worldMarketsData';
@@ -432,24 +341,6 @@ const HomeView = () => {
     const interval = setInterval(() => fetchWorldMarkets(true), 2 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchWorldMarkets]);
-
-  useEffect(() => {
-    console.log('Historical data updated:', historicalData);
-    console.log('Loading state:', isLoading);
-  }, [historicalData, isLoading]);
-
-  useEffect(() => {
-    if (historicalData.length > 0) {
-      console.log('Data sample:', historicalData[0]);
-      console.log('Data length:', historicalData.length);
-      console.log('Container width:', containerWidth);
-      console.log('Scales:', {
-        xDomain: xScale.domain(),
-        sensexDomain: sensexScale.domain(),
-        niftyDomain: niftyScale.domain()
-      });
-    }
-  }, [historicalData, containerWidth, xScale, sensexScale, niftyScale]);
 
   const marketConfig = {
     '^BSESN': { name: 'BSE SENSEX', currency: '₹', locale: 'en-IN' },
@@ -562,12 +453,7 @@ const HomeView = () => {
             </span>
           </div>
         </div>
-        <div 
-          ref={containerRef}
-          className="relative h-[200px] w-full"
-          onMouseMove={handleTooltip}
-          onMouseLeave={() => setTooltipData(null)}
-        >
+        <div className="relative h-[200px]">
           {loadingAnimation ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="flex flex-col items-center space-y-2">
@@ -584,186 +470,52 @@ const HomeView = () => {
           ) : !isReady ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-gray-400">
-                {!historicalData.length ? 'No data available' :
-                 !containerWidth ? 'Initializing chart...' :
-                 'Preparing visualization...'}
+                {!historicalData.length ? 'No data available' : 'Preparing visualization...'}
               </div>
             </div>
           ) : (
-            <svg width={containerWidth} height={height}>
-              <LinearGradient
-                id="sensex-gradient"
-                from="#ffa07a"
-                to="#ffa07a"
-                fromOpacity={0.2}
-                toOpacity={0.05}
-              />
-              <LinearGradient
-                id="nifty-gradient"
-                from="#7cb5ec"
-                to="#7cb5ec"
-                fromOpacity={0.2}
-                toOpacity={0.05}
-              />
-              
-              <Group>
-                {isReady && (
-                  <>
-                    <AreaClosed
-                      data={historicalData}
-                      x={d => xScale(d.date)}
-                      y={d => sensexScale(d.sensex)}
-                      yScale={sensexScale}
-                      curve={curveMonotoneX}
-                      fill="url(#sensex-gradient)"
-                    />
-                    <AreaClosed
-                      data={historicalData}
-                      x={d => xScale(d.date)}
-                      y={d => niftyScale(d.nifty)}
-                      yScale={niftyScale}
-                      curve={curveMonotoneX}
-                      fill="url(#nifty-gradient)"
-                    />
-
-                    <LinePath
-                      data={historicalData}
-                      x={d => xScale(d.date)}
-                      y={d => sensexScale(d.sensex)}
-                      stroke="#ffa07a"
-                      strokeWidth={2}
-                      curve={curveMonotoneX}
-                    />
-                    <LinePath
-                      data={historicalData}
-                      x={d => xScale(d.date)}
-                      y={d => niftyScale(d.nifty)}
-                      stroke="#7cb5ec"
-                      strokeWidth={2}
-                      curve={curveMonotoneX}
-                    />
-                    
-                    {tooltipData && (
-                      <>
-                        <Line
-                          from={{ x: xScale(getDate(tooltipData)), y: 0 }}
-                          to={{ x: xScale(getDate(tooltipData)), y: height }}
-                          stroke="#718096"
-                          strokeWidth={1}
-                          pointerEvents="none"
-                          strokeDasharray="4,4"
-                        />
-                        <circle
-                          cx={xScale(getDate(tooltipData))}
-                          cy={sensexScale(tooltipData.sensex)}
-                          r={4}
-                          fill="#ffa07a"
-                          stroke="white"
-                          strokeWidth={2}
-                        />
-                        <circle
-                          cx={xScale(getDate(tooltipData))}
-                          cy={niftyScale(tooltipData.nifty)}
-                          r={4}
-                          fill="#7cb5ec"
-                          stroke="white"
-                          strokeWidth={2}
-                        />
-                      </>
-                    )}
-                  </>
-                )}
-              </Group>
-            </svg>
-          )}
-
-          {tooltipData && (
-            <div
-              className="absolute backdrop-blur-none bg-white/60 shadow-lg rounded-lg p-3 text-sm"
-              style={{
-                left: xScale(getDate(tooltipData)),
-                top: 0,
-                transform: 'translateX(-50%)',
-                zIndex: 10,
-              }}
-            >
-              <div className="font-medium mb-1 text-gray-800">
-                {getDate(tooltipData) instanceof Date 
-                  ? getDate(tooltipData).toLocaleDateString()
-                  : new Date(getDate(tooltipData)).toLocaleDateString()}
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#ffa07a]" />
-                  <span className="text-gray-600">SENSEX:</span>
-                  <span className="font-medium text-gray-800">
-                    {tooltipData.sensex?.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#7cb5ec]" />
-                  <span className="text-gray-600">NIFTY 50:</span>
-                  <span className="font-medium text-gray-800">
-                    {tooltipData.nifty?.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <MarketAreaChart 
+              data={historicalData} 
+              height={200}
+              showNifty={true}
+            />
           )}
         </div>
       </div>
 
       <div className="col-span-4 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Market News</h2>
-        <div className="relative h-[200px] overflow-auto">
+        <h2 className="text-lg font-semibold mb-4">Market News</h2>
+        <div className="h-[200px] overflow-y-auto">
           {newsLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex flex-col items-center space-y-2">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                <div className="text-gray-400">Loading news...</div>
-              </div>
+            <div className="flex justify-center items-center h-full">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
             </div>
           ) : news.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-gray-500">No news available</div>
+            <div className="flex justify-center items-center h-full text-gray-500">
+              No news available
             </div>
           ) : (
-            news.map((item, index) => (
-              <a 
-                key={index} 
-                href={item.url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block border-b pb-2 hover:bg-gray-50 transition-colors rounded-lg p-2"
-              >
-                <div className="flex flex-col">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      item.category === 'BSE' ? 'bg-blue-100 text-blue-800' :
-                      item.category === 'NIFTY' ? 'bg-green-100 text-green-800' :
-                      item.category === 'NSE' ? 'bg-purple-100 text-purple-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {item.category}
+            <div className="space-y-3">
+              {news.map((item, i) => (
+                <a 
+                  key={i}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer" 
+                  className="block border-b last:border-b-0 pb-3 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-700">
+                      {item.source.name}
                     </span>
                     <span className="text-xs text-gray-500">
                       {new Date(item.publishedAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <p className="text-sm font-medium mb-1 line-clamp-2">
-                    {item.title}
-                  </p>
-                  <div className="flex justify-between items-center mt-1">
-                    <span className="text-xs text-blue-600">
-                      {item.source}
-                    </span>
-                    <span className="text-xs text-gray-400 hover:text-blue-500">
-                      Read more →
-                    </span>
-                  </div>
-                </div>
-              </a>
-            ))
+                  <h4 className="text-sm font-medium line-clamp-2">{item.title}</h4>
+                </a>
+              ))}
+            </div>
           )}
         </div>
       </div>
