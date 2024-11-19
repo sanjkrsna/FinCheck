@@ -1,78 +1,828 @@
-import React, { useEffect, useState } from 'react';
-import { AgChartsReact } from 'ag-charts-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { AreaClosed, Line, LinePath } from '@visx/shape';
+import { curveMonotoneX } from '@visx/curve';
+import { scaleTime, scaleLinear } from '@visx/scale';
+import { Group } from '@visx/group';
+import { LinearGradient } from '@visx/gradient';
+import { bisector } from 'd3-array';
+import { debounce } from 'lodash';
 
-const HomeView = () => {
-  const [chartData, setChartData] = useState([]);
-  const [symbols, setSymbols] = useState(''); // Initially empty
+const market_data = {
+  indices: {
+    'SENSEX': '^BSESN',
+    'NIFTY 50': '^NSEI',
+    'NIFTY Bank': 'NSEBANK.NS',
+    'NIFTY Auto': 'NIFTYAUTO.NS',
+    'NIFTY IT': 'NIFTYIT.NS',
+    'NIFTY Pharma': 'NIFTYPHARMA.NS',
+    'NIFTY Metal': 'NIFTYMETAL.NS',
+    'BSE SmallCap': '^BSESMC',
+    'BSE MidCap': '^BSEMC',
+  },
+  manufacturing_companies: {
+    'Maruti Suzuki': 'MARUTI.NS',
+    'Hero Motocorp': 'HEROMOTOCO.NS',
+    'Bajaj Auto': 'BAJAJ-AUTO.NS',
+    'TVS Motor Co': 'TVSMOTOR.NS',
+    'Accelya Solution': 'ACCELYA.NS',
+    'Ashok Leyland': 'ASHOKLEY.NS',
+    'Bombay Dyeing': 'BOMDYEING.NS',
+    'Boss Packaging': 'BOSS-ST.NS', 
+    'CG Power & Ind': 'CGPOWER.NS',
+    'Danish Power': 'DANISH.NS',       
+    'Delta Manufact': 'DELTAMAGNT.NS',
+    'East India Drums': 'EASTINDIA.BO',
+    'Gallops Enterp': 'GALLOPENT.BO',
+    'Godawari Power': 'GPIL.BO',
+    'Godrej Industrie': 'GODREJIND.NS',
+    'GTL Infra': 'GTLINFRA.NS',
+    'Indian Link Ch': 'INDIANLINK.BO',
+    'Kamdhenu': 'KAMDHENU.NS',
+    'Kronox Lab': 'KRONO.NS',
+    'Omansh Enterpri': 'OMANSH.BO',
+    'Petro Carbon': 'PETRO.BO',
+    'Relicab Cable': 'RELCABLE.BO',
+    'Shreyans Inds': 'SHREYANIND.NS',
+    'SpiceJet': 'SPICEJET.NS',
+    'Suzlon Energy': 'SUZLON.NS',
+    'UPL': 'UPL.NS',
+    'Vodafone Idea': 'IDEA.NS',
+    'Wanbury': 'WANBURY.NS',
+    'Yes Bank': 'YESBANK.NS',
+  }
+};
+
+const useWatchlistData = (watchlist) => {
+  const [watchlistData, setWatchlistData] = useState({});
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [watchlistError, setWatchlistError] = useState(null);
+
+  const getSymbol = useCallback((name) => {
+    const symbol = market_data.indices[name] || market_data.manufacturing_companies[name];
+    console.log(`Symbol mapping for ${name}:`, symbol); // Debug log
+    return symbol;
+  }, []);
+
+  const debouncedFetch = useCallback(
+    debounce(async () => {
+      try {
+        setWatchlistLoading(true);
+        setWatchlistError(null);
+
+        const symbols = watchlist.map(item => getSymbol(item)).filter(Boolean);
+        console.log('Fetching data for symbols:', symbols); // Debug log
+
+        if (symbols.length === 0) return;
+
+        const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
+        const response = await fetch(
+          `http://localhost:8000/api/stock-data/?${queryString}&type=individual&mode=daily`
+        );
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        console.log('API Response:', data);
+        setWatchlistData(data);
+      } catch (error) {
+        console.error('Error fetching watchlist data:', error);
+        setWatchlistError(error);
+      } finally {
+        setWatchlistLoading(false);
+      }
+    }, 1000),
+    [watchlist, getSymbol]
+  );
 
   useEffect(() => {
-    const getStockData = async () => {
-      if (!symbols) return; // Don't fetch if no symbols are provided
+    debouncedFetch();
+    return () => debouncedFetch.cancel();
+  }, [debouncedFetch]);
 
-      try {
-        const response = await fetch(`http://127.0.0.1:8000/api/stock-data/?symbols=${symbols}`); // Pass symbols as query parameter
-        const data = await response.json();
-        const formattedData = data.map(item => {
-          const entry = { date: item.date };
-          // Add each symbol's data to the entry
-          for (const symbol of symbols.split(',')) {
-            entry[symbol] = item[symbol];
-          }
-          return entry;
-        });
-        setChartData(formattedData);
-      } catch (error) {
-        console.error('Error fetching stock data:', error);
+  return { watchlistData, watchlistLoading, watchlistError };
+};
+
+const HomeView = () => {
+  const [data, setData] = useState([]);
+  const [tooltipData, setTooltipData] = useState(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const containerRef = useRef(null);
+  const height = 200;
+  const margin = { top: 0, right: 0, bottom: 0, left: 0 };
+  const [news, setNews] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [watchlist] = useState([
+    'Maruti Suzuki',
+    'Hero Motocorp',
+    'Bajaj Auto'
+  ]);
+  const [historicalData, setHistoricalData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [worldMarketsData, setWorldMarketsData] = useState({});
+  const [loadingAnimation, setLoadingAnimation] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const xScale = useMemo(() => {
+    if (!historicalData.length || !containerWidth) return null;
+    const dates = historicalData.map(d => d.date);
+    return scaleTime({
+      range: [0, containerWidth - margin.left - margin.right],
+      domain: [Math.min(...dates), Math.max(...dates)],
+    });
+  }, [historicalData, containerWidth, margin]);
+
+  const sensexScale = useMemo(() => {
+    if (!historicalData.length) return null;
+    const values = historicalData.map(d => d.sensex).filter(Boolean);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const padding = (max - min) * 0.1;
+    
+    return scaleLinear({
+      range: [height - margin.bottom, margin.top],
+      domain: [min - padding, max + padding],
+      nice: true,
+    });
+  }, [historicalData, height, margin]);
+
+  const niftyScale = useMemo(() => {
+    if (!historicalData.length) return null;
+    const values = historicalData.map(d => d.nifty).filter(Boolean);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const padding = (max - min) * 0.1;
+    
+    return scaleLinear({
+      range: [height - margin.bottom, margin.top],
+      domain: [min - padding, max + padding],
+      nice: true,
+    });
+  }, [historicalData, height, margin]);
+
+  const isReady = useMemo(() => {
+    const hasScales = xScale && sensexScale && niftyScale;
+    const hasData = !isLoading && historicalData.length > 0;
+    const hasContainer = containerWidth > 0;
+    
+    console.log('Ready check:', {
+      hasScales,
+      hasData,
+      hasContainer,
+      containerWidth,
+      dataLength: historicalData.length
+    });
+
+    return hasScales && hasData && hasContainer;
+  }, [isLoading, historicalData, containerWidth, xScale, sensexScale, niftyScale]);
+
+  useEffect(() => {
+    if (historicalData.length > 0) {
+      console.log('Component state:', {
+        dataLength: historicalData.length,
+        containerWidth,
+        hasXScale: !!xScale,
+        hasSensexScale: !!sensexScale,
+        hasNiftyScale: !!niftyScale,
+        isReady
+      });
+    }
+  }, [historicalData, containerWidth, xScale, sensexScale, niftyScale, isReady]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        const newWidth = containerRef.current.offsetWidth;
+        if (newWidth !== containerWidth) {
+          setContainerWidth(newWidth);
+        }
       }
     };
 
-    getStockData();
-  }, [symbols]); // Fetch data whenever symbols change
+    updateWidth();
 
-  const options = {
-    data: chartData,
-    series: symbols.split(',').map(symbol => ({
-      xKey: 'date',
-      yKey: symbol,
-      title: symbol,
-      stroke: '#' + Math.floor(Math.random()*16777215).toString(16), // Random color for each line
-    })),
-    axes: [
-      {
-        type: 'category',
-        position: 'bottom',
-        title: 'Date',
-      },
-      {
-        type: 'number',
-        position: 'left',
-        title: 'Stock Price',
-      },
-    ],
+    const resizeObserver = new ResizeObserver(() => {
+      updateWidth();
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [containerWidth]);
+
+  const fetchAndCacheData = useCallback(async (forceRefresh = false) => {
+    const cacheKey = 'marketData';
+    const cacheDuration = 2 * 60 * 60 * 1000;
+    
+    try {
+      setLoadingAnimation(true);
+      setLoadError(false);
+      
+      console.log('Fetching market data...'); // Debug log
+
+      const response = await fetch(
+        'http://localhost:8000/api/stock-data/?symbols=^BSESN&symbols=^NSEI&type=historical',
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      console.log('Response status:', response.status); // Debug log
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const jsonData = await response.json();
+      console.log('Raw API response:', jsonData); // Debug log
+      
+      if (!jsonData.data || !Array.isArray(jsonData.data)) {
+        throw new Error('Invalid data format from API');
+      }
+
+      const processedData = jsonData.data
+        .map(item => ({
+          date: new Date(item.date),
+          sensex: parseFloat(item['^BSESN']),
+          nifty: parseFloat(item['^NSEI'])
+        }))
+        .filter(item => 
+          item.date instanceof Date && 
+          !isNaN(item.date) && 
+          !isNaN(item.sensex) && 
+          !isNaN(item.nifty)
+        )
+        .sort((a, b) => a.date - b.date);
+
+      console.log('Processed data points:', processedData.length); // Debug log
+      console.log('Sample processed data:', processedData[0]); // Debug log
+
+      setHistoricalData(processedData);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching market data:', error);
+      setLoadError(true);
+    } finally {
+      setLoadingAnimation(false);
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    console.log('Initializing data fetch...'); // Debug log
+    fetchAndCacheData();
+    
+    // Set up refresh interval
+    const intervalId = setInterval(() => {
+      console.log('Refreshing data...'); // Debug log
+      fetchAndCacheData(true);
+    }, 2 * 60 * 60 * 1000); // 2 hours
+
+    return () => clearInterval(intervalId);
+  }, [fetchAndCacheData]);
+
+  useEffect(() => {
+    if (historicalData.length > 0) {
+      console.log('First data point:', historicalData[0]);
+      console.log('Last data point:', historicalData[historicalData.length - 1]);
+      console.log('Data points:', historicalData.length);
+      console.log('Sample date type:', historicalData[0].date instanceof Date);
+    }
+  }, [historicalData]);
+
+  const getDate = d => d.date;
+  const getSensex = d => d.sensex;
+  const getNifty = d => d.nifty;
+  const bisectDate = bisector(getDate).left;
+
+  const handleTooltip = (event) => {
+    const svgElement = event.currentTarget;
+    const rect = svgElement.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+
+    const x0 = xScale.invert(x);
+    const index = bisectDate(historicalData, x0, 1);
+    const d0 = historicalData[index - 1];
+    const d1 = historicalData[index];
+    
+    if (!d0 || !d1) return;
+
+    let d = d0;
+    if (d1 && getDate(d1)) {
+      d = x0.valueOf() - getDate(d0).valueOf() > getDate(d1).valueOf() - x0.valueOf() ? d1 : d0;
+    }
+
+    if (d && !(d.date instanceof Date)) {
+      d.date = new Date(d.date);
+    }
+
+    setTooltipData(d);
+  };
+
+  const getTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    const intervals = {
+      year: 31536000,
+      month: 2592000,
+      week: 604800,
+      day: 86400,
+      hour: 3600,
+      minute: 60
+    };
+
+    for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+      const interval = Math.floor(seconds / secondsInUnit);
+      if (interval >= 1) {
+        return interval === 1 ? `1 ${unit} ago` : `${interval} ${unit}s ago`;
+      }
+    }
+    return 'Just now';
+  };
+
+  // useEffect(() => {
+  //   const fetchNews = async () => {
+  //     try {
+  //       setNewsLoading(true);
+  //       const response = await fetch('http://localhost:8000/api/-news/');
+        
+  //       if (!response.ok) {
+  //         throw new Error(`HTTP error! status: ${response.status}`);
+  //       }
+        
+  //       const data = await response.json();
+  //       console.log('News API response:', data); // Debug log
+        
+  //       if (Array.isArray(data)) {
+  //         setNews(data);
+  //       } else {
+  //         console.error('Unexpected news data format:', data);
+  //         setNews([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching news:', error);
+  //       setNews([]);
+  //     } finally {
+  //       setNewsLoading(false);
+  //     }
+  //   };
+
+  //   fetchNews();
+  // }, []); // Empty dependency array means this runs once on component mount
+
+  const fetchWorldMarkets = useCallback(async (forceRefresh = false) => {
+    const cacheKey = 'worldMarketsData';
+    const cacheDuration = 2 * 60 * 60 * 1000;
+    
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData && !forceRefresh) {
+      const { data, timestamp } = JSON.parse(cachedData);
+      if (Date.now() - timestamp < cacheDuration) {
+        setWorldMarketsData(data);
+        return;
+      }
+    }
+
+    try {
+      const symbols = [
+        '^BSESN',    // BSE SENSEX
+        '^NSEI',     // NIFTY 50
+        '^GSPC',     // S&P 500 (US)
+        '^IXIC',     // NASDAQ (US)
+        '^N225',     // Nikkei 225 (Japan)
+        '^HSI',      // Hang Seng (Hong Kong)
+      ];
+      const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
+      
+      const response = await fetch(`http://localhost:8000/api/stock-data/?${queryString}&type=daily_change`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const rawData = await response.text();
+      const data = JSON.parse(rawData.replace(/: *NaN/g, ': null'));
+      
+      // Process the data to match our expected format
+      const processedData = {};
+      for (const [symbol, info] of Object.entries(data)) {
+        processedData[symbol] = {
+          current_price: info.current_price || null,
+          percent_change: info.percent_change || 0,
+          prev_close: info.previous_price || null  // Note: API returns "previous_price" not "prev_close"
+        };
+      }
+
+      localStorage.setItem(cacheKey, JSON.stringify({
+        data: processedData,
+        timestamp: Date.now()
+      }));
+
+      setWorldMarketsData(processedData);
+    } catch (error) {
+      console.error('Error fetching world markets data:', error);
+      setWorldMarketsData({});
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchWorldMarkets();
+    const interval = setInterval(() => fetchWorldMarkets(true), 2 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchWorldMarkets]);
+
+  useEffect(() => {
+    console.log('Historical data updated:', historicalData);
+    console.log('Loading state:', isLoading);
+  }, [historicalData, isLoading]);
+
+  useEffect(() => {
+    if (historicalData.length > 0) {
+      console.log('Data sample:', historicalData[0]);
+      console.log('Data length:', historicalData.length);
+      console.log('Container width:', containerWidth);
+      console.log('Scales:', {
+        xDomain: xScale.domain(),
+        sensexDomain: sensexScale.domain(),
+        niftyDomain: niftyScale.domain()
+      });
+    }
+  }, [historicalData, containerWidth, xScale, sensexScale, niftyScale]);
+
+  const marketConfig = {
+    '^BSESN': { name: 'BSE SENSEX', currency: '₹', locale: 'en-IN' },
+    '^NSEI': { name: 'NIFTY 50', currency: '₹', locale: 'en-IN' },
+    '^GSPC': { name: 'S&P 500', currency: '$', locale: 'en-US' },
+    '^IXIC': { name: 'NASDAQ', currency: '$', locale: 'en-US' },
+    '^HSI': { name: 'Hang Seng', currency: 'HK$', locale: 'zh-HK' }
+  };
+
+  const getMarketStatus = (lastUpdate) => {
+    const ist = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const currentTime = new Date(ist);
+    const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
+    
+    // Market hours: 9:15 AM to 3:30 PM IST
+    const isMarketHours = (currentHour > 9 || (currentHour === 9 && currentMinute >= 15)) 
+                         && (currentHour < 15 || (currentHour === 15 && currentMinute <= 30));
+    const isWeekend = currentTime.getDay() === 0 || currentTime.getDay() === 6;
+
+    if (isWeekend) return 'Market Closed (Weekend)';
+    if (!isMarketHours) return 'Market Closed';
+    return 'Market Open';
+  };
+
+  const { watchlistData, watchlistLoading, watchlistError } = useWatchlistData(watchlist);
+
+  const getSymbol = (name) => {
+    return market_data.indices[name] || market_data.manufacturing_companies[name];
+  };
+
+  const renderWatchlistItem = (displayName) => {
+    const symbol = getSymbol(displayName);
+    const data = symbol ? watchlistData[symbol] : null;
+    
+    console.log(`Rendering ${displayName}:`, { 
+      symbol, 
+      hasData: !!data,
+      data 
+    }); // Enhanced debug log
+
+    return (
+      <div key={displayName} className="bg-gray-50 p-3 rounded-lg">
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-medium">{displayName}</span>
+          {data && (
+            <span className={`text-xs font-medium ${
+              data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
+            }`}>
+              {data.day_change_percent >= 0 ? '+' : ''}
+              {data.day_change_percent.toFixed(2)}%
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-600">
+          {watchlistLoading ? (
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+              <div className="h-3 bg-gray-200 rounded w-16 mt-2"></div>
+            </div>
+          ) : data ? (
+            <>
+              <div className="flex justify-between items-center">
+                <span>₹{data.current_price.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2,
+                  minimumFractionDigits: 2
+                })}</span>
+                <span className={`text-xs ${
+                  data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
+                }`}>
+                  {data.day_change >= 0 ? '▲' : '▼'} 
+                  ₹{Math.abs(data.day_change).toFixed(2)}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                <span>H: ₹{data.high.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+                <span className="mx-2">|</span>
+                <span>L: ₹{data.low.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+              </div>
+            </>
+          ) : (
+            <span className="text-xs text-gray-400">
+              {symbol || 'Symbol not found'}
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="grid grid-cols-12 gap-4">
-      {/* Market Overview */}
       <div className="col-span-8 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Market Overview</h2>
-        <div className="h-[200px] bg-gray-50 rounded-lg mb-2">
-          <AgChartsReact options={options} />
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">Market Overview</h2>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">
+              {historicalData.length > 0 && `Last updated: ${new Date(historicalData[historicalData.length - 1].date).toLocaleDateString()}`}
+            </span>
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              getMarketStatus() === 'Market Open' 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-gray-100 text-gray-600'
+            }`}>
+              {getMarketStatus()}
+            </span>
+          </div>
+        </div>
+        <div 
+          ref={containerRef}
+          className="relative h-[200px] w-full"
+          onMouseMove={handleTooltip}
+          onMouseLeave={() => setTooltipData(null)}
+        >
+          {loadingAnimation ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center space-y-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="text-gray-400">Loading market data...</div>
+              </div>
+            </div>
+          ) : loadError ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-red-500">
+                Error loading market data. Please try again later.
+              </div>
+            </div>
+          ) : !isReady ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-gray-400">
+                {!historicalData.length ? 'No data available' :
+                 !containerWidth ? 'Initializing chart...' :
+                 'Preparing visualization...'}
+              </div>
+            </div>
+          ) : (
+            <svg width={containerWidth} height={height}>
+              <LinearGradient
+                id="sensex-gradient"
+                from="#ffa07a"
+                to="#ffa07a"
+                fromOpacity={0.2}
+                toOpacity={0.05}
+              />
+              <LinearGradient
+                id="nifty-gradient"
+                from="#7cb5ec"
+                to="#7cb5ec"
+                fromOpacity={0.2}
+                toOpacity={0.05}
+              />
+              
+              <Group>
+                {isReady && (
+                  <>
+                    <AreaClosed
+                      data={historicalData}
+                      x={d => xScale(d.date)}
+                      y={d => sensexScale(d.sensex)}
+                      yScale={sensexScale}
+                      curve={curveMonotoneX}
+                      fill="url(#sensex-gradient)"
+                    />
+                    <AreaClosed
+                      data={historicalData}
+                      x={d => xScale(d.date)}
+                      y={d => niftyScale(d.nifty)}
+                      yScale={niftyScale}
+                      curve={curveMonotoneX}
+                      fill="url(#nifty-gradient)"
+                    />
+
+                    <LinePath
+                      data={historicalData}
+                      x={d => xScale(d.date)}
+                      y={d => sensexScale(d.sensex)}
+                      stroke="#ffa07a"
+                      strokeWidth={2}
+                      curve={curveMonotoneX}
+                    />
+                    <LinePath
+                      data={historicalData}
+                      x={d => xScale(d.date)}
+                      y={d => niftyScale(d.nifty)}
+                      stroke="#7cb5ec"
+                      strokeWidth={2}
+                      curve={curveMonotoneX}
+                    />
+                    
+                    {tooltipData && (
+                      <>
+                        <Line
+                          from={{ x: xScale(getDate(tooltipData)), y: 0 }}
+                          to={{ x: xScale(getDate(tooltipData)), y: height }}
+                          stroke="#718096"
+                          strokeWidth={1}
+                          pointerEvents="none"
+                          strokeDasharray="4,4"
+                        />
+                        <circle
+                          cx={xScale(getDate(tooltipData))}
+                          cy={sensexScale(tooltipData.sensex)}
+                          r={4}
+                          fill="#ffa07a"
+                          stroke="white"
+                          strokeWidth={2}
+                        />
+                        <circle
+                          cx={xScale(getDate(tooltipData))}
+                          cy={niftyScale(tooltipData.nifty)}
+                          r={4}
+                          fill="#7cb5ec"
+                          stroke="white"
+                          strokeWidth={2}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+              </Group>
+            </svg>
+          )}
+
+          {tooltipData && (
+            <div
+              className="absolute backdrop-blur-none bg-white/60 shadow-lg rounded-lg p-3 text-sm"
+              style={{
+                left: xScale(getDate(tooltipData)),
+                top: 0,
+                transform: 'translateX(-50%)',
+                zIndex: 10,
+              }}
+            >
+              <div className="font-medium mb-1 text-gray-800">
+                {getDate(tooltipData) instanceof Date 
+                  ? getDate(tooltipData).toLocaleDateString()
+                  : new Date(getDate(tooltipData)).toLocaleDateString()}
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#ffa07a]" />
+                  <span className="text-gray-600">SENSEX:</span>
+                  <span className="font-medium text-gray-800">
+                    {tooltipData.sensex?.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#7cb5ec]" />
+                  <span className="text-gray-600">NIFTY 50:</span>
+                  <span className="font-medium text-gray-800">
+                    {tooltipData.nifty?.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-      {/* Input for symbols */}
-      <div className="col-span-4">
-        <input
-          type="text"
-          value={symbols}
-          onChange={(e) => setSymbols(e.target.value)}
-          placeholder="Enter stock symbols separated by commas"
-          className="border rounded p-2 w-full"
-        />
+
+      <div className="col-span-4 bg-white rounded-lg shadow p-4">
+        <h2 className="text-lg font-semibold mb-2">Market News</h2>
+        <div className="relative h-[200px] overflow-auto">
+          {newsLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center space-y-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="text-gray-400">Loading news...</div>
+              </div>
+            </div>
+          ) : news.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-gray-500">No news available</div>
+            </div>
+          ) : (
+            news.map((item, index) => (
+              <a 
+                key={index} 
+                href={item.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block border-b pb-2 hover:bg-gray-50 transition-colors rounded-lg p-2"
+              >
+                <div className="flex flex-col">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      item.category === 'BSE' ? 'bg-blue-100 text-blue-800' :
+                      item.category === 'NIFTY' ? 'bg-green-100 text-green-800' :
+                      item.category === 'NSE' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.category}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(item.publishedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium mb-1 line-clamp-2">
+                    {item.title}
+                  </p>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-xs text-blue-600">
+                      {item.source}
+                    </span>
+                    <span className="text-xs text-gray-400 hover:text-blue-500">
+                      Read more →
+                    </span>
+                  </div>
+                </div>
+              </a>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="col-span-4 bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">World Markets</h2>
+          <span className="text-xs text-gray-500">Last market close</span>
+        </div>
+        <div className="space-y-2 max-h-[150px] overflow-auto">
+          {Object.entries(worldMarketsData).map(([symbol, data]) => {
+            const config = marketConfig[symbol];
+            if (!config) return null;
+
+            const formatPrice = (price) => {
+              if (price === null) return 'N/A';
+              return `${config.currency}${price.toLocaleString(config.locale)}`;
+            };
+
+            return (
+              <div key={symbol} className="flex justify-between items-center">
+                <div>
+                  <span className="text-sm text-gray-600">{config.name}</span>
+                  <span className="text-xs text-gray-400 block">
+                    {data.as_of_date ? `As of ${data.as_of_date}` : 'Last close'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-medium block">
+                    {formatPrice(data.current_price)}
+                  </span>
+                  <span className={`text-xs ${
+                    data.percent_change >= 0 ? 'text-green-500' : 'text-red-500'
+                  }`}>
+                    {data.percent_change >= 0 ? '+' : ''}{data.percent_change?.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="col-span-8 bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-semibold">Available Stocks</h2>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-500">Last market close</span>
+            {watchlistLoading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 max-h-[150px] overflow-auto">
+          {watchlist.map(item => renderWatchlistItem(item))}
+        </div>
       </div>
     </div>
   );
 };
 
 export default HomeView;
-

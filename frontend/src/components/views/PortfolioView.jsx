@@ -1,141 +1,143 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useCallback } from 'react';
+import { useEffect } from 'react';
+import { debounce } from 'lodash';
+
+const market_data = {
+  manufacturing_companies: {
+    'Maruti Suzuki': 'MARUTI.NS',
+    'Hero Motocorp': 'HEROMOTOCO.NS',
+    'Bajaj Auto': 'BAJAJ-AUTO.NS',
+  }
+};
 
 const PortfolioView = () => {
-  const [selectedStock, setSelectedStock] = useState(null);
+  const navigate = useNavigate();
+  const [stocksData, setStocksData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const portfolioStocks = [
-    {
-      id: 1,
-      symbol: 'AAPL',
-      name: 'Apple Inc.',
-      shares: 150,
-      avgPrice: 145.23,
-      currentPrice: 154.23,
-      change: '+2.4%',
-      value: 23134.50
-    },
-    {
-      id: 2,
-      symbol: 'GOOGL',
-      name: 'Alphabet Inc.',
-      shares: 50,
-      avgPrice: 2745.12,
-      currentPrice: 2812.34,
-      change: '+1.8%',
-      value: 140617.00
-    },
-    {
-      id: 3,
-      symbol: 'MSFT',
-      name: 'Microsoft Corporation',
-      shares: 100,
-      avgPrice: 234.56,
-      currentPrice: 242.45,
-      change: '+3.2%',
-      value: 24245.00
-    },
-    {
-      id: 4,
-      symbol: 'TSLA',
-      name: 'Tesla, Inc.',
-      shares: 75,
-      avgPrice: 856.22,
-      currentPrice: 842.45,
-      change: '-1.5%',
-      value: 63183.75
-    },
-    {
-      id: 5,
-      symbol: 'AMZN',
-      name: 'Amazon.com, Inc.',
-      shares: 30,
-      avgPrice: 3245.67,
-      currentPrice: 3312.45,
-      change: '+2.1%',
-      value: 99373.50
-    },
-    {
-      id: 6,
-      symbol: 'META',
-      name: 'Meta Platforms, Inc.',
-      shares: 80,
-      avgPrice: 324.56,
-      currentPrice: 332.12,
-      change: '+2.8%',
-      value: 26569.60
-    }
-  ];
+  const getSymbol = useCallback((name) => {
+    return market_data.manufacturing_companies[name];
+  }, []);
+
+  const debouncedFetch = useCallback(
+    debounce(async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const symbols = Object.values(market_data.manufacturing_companies);
+        console.log('Fetching data for symbols:', symbols);
+
+        if (symbols.length === 0) return;
+
+        const queryString = symbols.map(s => `symbols=${encodeURIComponent(s)}`).join('&');
+        const response = await fetch(
+          `http://localhost:8000/api/stock-data/?${queryString}&type=individual&mode=daily`
+        );
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        console.log('API Response:', data);
+        setStocksData(data);
+      } catch (error) {
+        console.error('Error fetching stocks data:', error);
+        setError(error);
+      } finally {
+        setLoading(false);
+      }
+    }, 1000),
+    [getSymbol]
+  );
+
+  useEffect(() => {
+    debouncedFetch();
+    return () => debouncedFetch.cancel();
+  }, [debouncedFetch]);
+
+  const renderStockItem = (displayName) => {
+    const symbol = getSymbol(displayName);
+    const data = symbol ? stocksData[symbol] : null;
+    
+    console.log(`Rendering ${displayName}:`, { symbol, hasData: !!data, data });
+
+    return (
+      <div 
+        key={displayName} 
+        className="bg-white p-3 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors border border-gray-100"
+        onClick={() => navigate(`/stock/${displayName}`)}
+      >
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-medium">{displayName}</span>
+          {data && (
+            <span className={`text-xs font-medium ${
+              data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
+            }`}>
+              {data.day_change_percent >= 0 ? '+' : ''}
+              {data.day_change_percent.toFixed(2)}%
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-600">
+          {loading ? (
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+              <div className="h-3 bg-gray-200 rounded w-16 mt-2"></div>
+            </div>
+          ) : data ? (
+            <>
+              <div className="flex justify-between items-center">
+                <span>₹{data.current_price.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2,
+                  minimumFractionDigits: 2
+                })}</span>
+                <span className={`text-xs ${
+                  data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
+                }`}>
+                  {data.day_change >= 0 ? '▲' : '▼'} 
+                  ₹{Math.abs(data.day_change).toFixed(2)}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                <span>H: ₹{data.high.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+                <span className="mx-2">|</span>
+                <span>L: ₹{data.low.toLocaleString('en-IN', {
+                  maximumFractionDigits: 2
+                })}</span>
+              </div>
+            </>
+          ) : (
+            <span className="text-xs text-gray-400">
+              {symbol || 'Symbol not found'}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
       <div className="flex justify-between items-center p-4 bg-white border-b">
-        <h2 className="text-xl font-bold text-gray-800">Your Portfolio</h2>
-        <div className="flex items-center space-x-4">
-          <div className="text-right">
-            <p className="text-sm text-gray-600">Total Value</p>
-            <p className="text-lg font-bold text-gray-800">$377,123.35</p>
-          </div>
-          <button className="bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-colors text-sm">
-            Add Stock
-          </button>
+        <h2 className="text-xl font-bold text-gray-800">Available Stocks</h2>
+        <div className="flex items-center space-x-2">
+          <span className="text-xs text-gray-500">Last market close</span>
+          {loading && (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {portfolioStocks.map((stock) => (
-            <div 
-              key={stock.id} 
-              className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">{stock.symbol}</h3>
-                    <p className="text-xs text-gray-600">{stock.name}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    stock.change.startsWith('+') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {stock.change}
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 mb-4 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Shares</span>
-                    <span className="font-medium">{stock.shares}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Avg Price</span>
-                    <span className="font-medium">${stock.avgPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Current</span>
-                    <span className="font-medium">${stock.currentPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between pt-1.5 border-t">
-                    <span className="text-gray-600">Value</span>
-                    <span className="font-bold">${stock.value.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setSelectedStock(stock)}
-                  className="w-full bg-gray-50 text-gray-700 py-1.5 px-3 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center space-x-1 text-sm"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                  </svg>
-                  <span>View Analytics</span>
-                </button>
-              </div>
-            </div>
-          ))}
+          {Object.keys(market_data.manufacturing_companies).map(stock => renderStockItem(stock))}
         </div>
       </div>
-
-      {selectedStock && <StockAnalytics stock={selectedStock} onClose={() => setSelectedStock(null)} />}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast, ToastContainer } from 'react-toastify';
@@ -37,10 +37,7 @@ const ToastMessage = ({ icon, title, message }) => (
 
 function LoginForm() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [rememberDevice, setRememberDevice] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -56,60 +53,34 @@ function LoginForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isLoading) return;
-
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      console.log('Remember Device:', rememberDevice);
-
-      const response = await axios.post(
-        'http://127.0.0.1:8000/api/login/', 
-        formData
-      );
-      
-      console.log('Login Response:', response.data);
+      const response = await axios.post('http://127.0.0.1:8000/api/login/', formData);
       
       if (rememberDevice) {
-        console.log('Storing in localStorage');
         localStorage.setItem("accessToken", response.data.tokens.access);
         localStorage.setItem("refreshToken", response.data.tokens.refresh);
       } else {
-        console.log('Storing in sessionStorage');
         sessionStorage.setItem("accessToken", response.data.tokens.access);
         sessionStorage.setItem("refreshToken", response.data.tokens.refresh);
       }
       
-      console.log('localStorage token:', localStorage.getItem('accessToken'));
-      console.log('sessionStorage token:', sessionStorage.getItem('accessToken'));
-      
       toast.success(
         <ToastMessage
-          icon={
-            <svg className="w-5 h-5 mr-2 text-green-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M5 13l4 4L19 7"></path>
-            </svg>
-          }
+          icon={<svg className="w-5 h-5 mr-2 text-green-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M5 13l4 4L19 7"></path></svg>}
           title="Successfully logged in!"
           message="Redirecting to dashboard..."
         />,
         TOAST_CONFIG
       );
 
-      setTimeout(() => {
-        navigate('/home', { replace: true });
-      }, 3000);
-
+      setTimeout(() => navigate('/home', { replace: true }), 3000);
     } catch (error) {
-      console.error("Login error:", error.response?.data);
-      
       toast.error(
         <ToastMessage
-          icon={
-            <svg className="w-5 h-5 mr-2 text-red-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          }
+          icon={<svg className="w-5 h-5 mr-2 text-red-500" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M6 18L18 6M6 6l12 12"></path></svg>}
           title="Login failed"
           message="Please check your credentials and try again."
         />,
@@ -119,10 +90,6 @@ function LoginForm() {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    console.log('Remember Device state changed:', rememberDevice);
-  }, [rememberDevice]);
 
   return (
     <>

@@ -4,39 +4,48 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 
+const CACHE_KEYS = {
+  HISTORICAL_DATA: 'historicalMarketData',
+  NEWS_DATA: 'newsData',
+  WORLD_MARKETS: 'worldMarketsData',
+  WATCHLIST: 'watchlistData',
+  ACCESS_TOKEN: 'accessToken',
+  REFRESH_TOKEN: 'refreshToken'
+};
+
 const LogoutPage = () => {
   const navigate = useNavigate();
   const { setIsAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [fadeOut, setFadeOut] = useState(false); // State for fade-out effect
+  const [fadeOut, setFadeOut] = useState(false);
 
   useEffect(() => {
     const logout = async () => {
       try {
-        const accessToken = localStorage.getItem("accessToken") || sessionStorage.getItem("accessToken");
-        const refreshToken = localStorage.getItem("refreshToken") || sessionStorage.getItem("refreshToken");
+        const accessToken = localStorage.getItem(CACHE_KEYS.ACCESS_TOKEN) || 
+                           sessionStorage.getItem(CACHE_KEYS.ACCESS_TOKEN);
+        const refreshToken = localStorage.getItem(CACHE_KEYS.REFRESH_TOKEN) || 
+                           sessionStorage.getItem(CACHE_KEYS.REFRESH_TOKEN);
 
         if (accessToken && refreshToken) {
           const config = {
-            headers: {
-              "Authorization": `Bearer ${accessToken}`
-            }
+            headers: { "Authorization": `Bearer ${accessToken}` }
           };
-          await axios.post("http://127.0.0.1:8000/api/logout/", { "refresh": refreshToken }, config);
+          await axios.post("http://127.0.0.1:8000/api/logout/", 
+            { "refresh": refreshToken }, 
+            config
+          );
         }
       } catch (error) {
         console.error("Failed to logout", error.response?.data || error.message);
       } finally {
-        // Clear all stored tokens
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        sessionStorage.removeItem('accessToken');
-        sessionStorage.removeItem('refreshToken');
+        // Clear all caches
+        Object.values(CACHE_KEYS).forEach(key => {
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+        });
         
-        // Update auth state
         setIsAuthenticated(false);
-
-        // Show success message
         toast.success('Successfully logged out!', {
           position: "top-center",
           autoClose: 2000,
