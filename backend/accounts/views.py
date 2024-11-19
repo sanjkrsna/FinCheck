@@ -412,16 +412,86 @@ class RequestPasswordResetView(GenericAPIView):
         OTP.objects.filter(email=email).delete()  # Remove any existing OTPs
         OTP.objects.create(email=email, otp=otp)
         
-        # Send email
-        send_mail(
-            'Password Reset OTP',
-            f'Your OTP for password reset is: {otp}. Valid for 5 minutes.',
-            settings.EMAIL_HOST_USER,
-            [email],
-            fail_silently=False,
-        )
+        # Send styled email
+        send_otp_email(email, otp)
         
         return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
+
+def send_otp_email(email, otp):
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #374151;
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #ffffff;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }}
+            .header {{
+                text-align: center;
+                padding: 20px 0;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+            .content {{
+                padding: 20px 0;
+            }}
+            .otp-box {{
+                background-color: #f3f4f6;
+                padding: 15px;
+                border-radius: 6px;
+                text-align: center;
+                font-size: 24px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                margin: 20px 0;
+                color: #2563eb;
+            }}
+            .footer {{
+                text-align: center;
+                padding-top: 20px;
+                font-size: 12px;
+                color: #6b7280;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 style="color: #2563eb; margin: 0;">FinCheck</h1>
+            </div>
+            <div class="content">
+                <p>Hello,</p>
+                <p>You have requested to reset your password. Please use the following OTP to proceed:</p>
+                <div class="otp-box">{otp}</div>
+                <p>This OTP will expire in 5 minutes.</p>
+                <p>If you didn't request this password reset, please ignore this email.</p>
+            </div>
+            <div class="footer">
+                <p>This is an automated message, please do not reply to this email.</p>
+                <p>&copy; {datetime.now().year} FinCheck. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    send_mail(
+        'FinCheck Password Reset OTP',
+        f'Your OTP for password reset is: {otp}',  # Plain text version
+        settings.EMAIL_HOST_USER,
+        [email],
+        fail_silently=False,
+        html_message=html_content  # HTML version
+    )
 
 class VerifyOTPView(GenericAPIView):
     permission_classes = (AllowAny,)
