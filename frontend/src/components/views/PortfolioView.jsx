@@ -64,6 +64,12 @@ const PortfolioView = () => {
     
     console.log(`Rendering ${displayName}:`, { symbol, hasData: !!data, data });
 
+    const formatNumber = (value) => {
+      return value !== undefined && value !== null 
+        ? Number(value).toFixed(2) 
+        : '0.00';
+    };
+
     return (
       <div 
         key={displayName} 
@@ -77,7 +83,7 @@ const PortfolioView = () => {
               data.day_change_percent >= 0 ? 'text-green-500' : 'text-red-500'
             }`}>
               {data.day_change_percent >= 0 ? '+' : ''}
-              {data.day_change_percent.toFixed(2)}%
+              {formatNumber(data.day_change_percent)}%
             </span>
           )}
         </div>
@@ -90,25 +96,18 @@ const PortfolioView = () => {
           ) : data ? (
             <>
               <div className="flex justify-between items-center">
-                <span>₹{data.current_price.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2,
-                  minimumFractionDigits: 2
-                })}</span>
+                <span>₹{formatNumber(data.current_price)}</span>
                 <span className={`text-xs ${
                   data.day_change >= 0 ? 'text-green-500' : 'text-red-500'
                 }`}>
                   {data.day_change >= 0 ? '▲' : '▼'} 
-                  ₹{Math.abs(data.day_change).toFixed(2)}
+                  ₹{formatNumber(Math.abs(data.day_change))}
                 </span>
               </div>
               <div className="text-xs text-gray-400 mt-1">
-                <span>H: ₹{data.high.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2
-                })}</span>
+                <span>H: ₹{formatNumber(data.high)}</span>
                 <span className="mx-2">|</span>
-                <span>L: ₹{data.low.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2
-                })}</span>
+                <span>L: ₹{formatNumber(data.low)}</span>
               </div>
             </>
           ) : (
