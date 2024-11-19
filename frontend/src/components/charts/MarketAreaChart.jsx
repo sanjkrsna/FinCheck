@@ -5,12 +5,13 @@ const MarketAreaChart = ({
   data, 
   height = 200,
   showNifty = true,
+  colors = {
+    primary: "#7cb5ec",
+    secondary: "#ffa07a"
+  },
+  stockName = null
 }) => {
-  // Early return if no data
   if (!data || data.length === 0) return null;
-
-  // Log the first data point to verify format
-  console.log('Sample data point:', data[0]);
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -19,14 +20,16 @@ const MarketAreaChart = ({
         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
       >
         <defs>
-          <linearGradient id="colorSensex" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#7cb5ec" stopOpacity={0.8}/>
-            <stop offset="95%" stopColor="#7cb5ec" stopOpacity={0.2}/>
+          <linearGradient id="colorPrimary" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colors.primary} stopOpacity={0.8}/>
+            <stop offset="95%" stopColor={colors.primary} stopOpacity={0.2}/>
           </linearGradient>
-          <linearGradient id="colorNifty" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#ffa07a" stopOpacity={0.6}/>
-            <stop offset="95%" stopColor="#ffa07a" stopOpacity={0.1}/>
-          </linearGradient>
+          {showNifty && (
+            <linearGradient id="colorSecondary" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={colors.secondary} stopOpacity={0.6}/>
+              <stop offset="95%" stopColor={colors.secondary} stopOpacity={0.1}/>
+            </linearGradient>
+          )}
         </defs>
 
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -75,10 +78,15 @@ const MarketAreaChart = ({
             border: '1px solid #e5e7eb',
             boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
           }}
-          formatter={(value, name) => [
-            `₹${value.toLocaleString('en-IN')}`,
-            name === 'primary' ? 'SENSEX' : 'NIFTY'
-          ]}
+          formatter={(value, name) => {
+            if (stockName) {
+              return [`₹${value.toLocaleString('en-IN')}`, stockName];
+            }
+            return [
+              `₹${value.toLocaleString('en-IN')}`, 
+              name === 'primary' ? 'SENSEX' : 'NIFTY'
+            ];
+          }}
           labelFormatter={(date) => new Date(date).toLocaleDateString('en-IN')}
         />
 
@@ -86,11 +94,11 @@ const MarketAreaChart = ({
           yAxisId="primary"
           type="monotone"
           dataKey="primary"
-          stroke="#7cb5ec"
+          stroke={colors.primary}
           fillOpacity={1}
-          fill="url(#colorSensex)"
+          fill="url(#colorPrimary)"
           strokeWidth={2}
-          name="SENSEX"
+          name="primary"
           connectNulls
         />
 
@@ -99,11 +107,11 @@ const MarketAreaChart = ({
             yAxisId="secondary"
             type="monotone"
             dataKey="secondary"
-            stroke="#ffa07a"
+            stroke={colors.secondary}
             fillOpacity={1}
-            fill="url(#colorNifty)"
+            fill="url(#colorSecondary)"
             strokeWidth={2}
-            name="NIFTY"
+            name="secondary"
             connectNulls
           />
         )}

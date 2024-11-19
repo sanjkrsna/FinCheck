@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { debounce } from 'lodash';
 import MarketAreaChart from '../charts/MarketAreaChart';
+import NewsComponent from '../NewsComponent';
 
 const market_data = {
   indices: {
@@ -483,41 +484,13 @@ const HomeView = () => {
         </div>
       </div>
 
-      <div className="col-span-4 bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-4">Market News</h2>
-        <div className="h-[200px] overflow-y-auto">
-          {newsLoading ? (
-            <div className="flex justify-center items-center h-full">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-            </div>
-          ) : news.length === 0 ? (
-            <div className="flex justify-center items-center h-full text-gray-500">
-              No news available
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {news.map((item, i) => (
-                <a 
-                  key={i}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer" 
-                  className="block border-b last:border-b-0 pb-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-700">
-                      {item.source.name}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(item.publishedAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-medium line-clamp-2">{item.title}</h4>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="col-span-4">
+        <NewsComponent 
+          news={news} 
+          loading={newsLoading}
+          maxHeight="200px"
+          title="Market News"
+        />
       </div>
 
       <div className="col-span-4 bg-white rounded-lg shadow p-4">
