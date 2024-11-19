@@ -9,6 +9,7 @@ import PortfolioView from './components/views/PortfolioView';
 import ProtectedRoute from './components/ProtectedRoute';
 import StockDashboard from './components/views/StockDashboard';
 import ForgotPassword from './components/ForgotPassword';
+import Settings from './components/Settings';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="home" element={<HomeView />} />
         <Route path="stock" element={<PortfolioView />} />
         <Route path="stock/:stockName" element={<StockDashboard />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="/forgot-password" element={<ForgotPassword />} />
     </Routes>

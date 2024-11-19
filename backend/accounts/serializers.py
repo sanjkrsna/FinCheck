@@ -92,9 +92,8 @@ class UpdateUserSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
-    confirm_password = serializers.CharField(required=True)
-
-    def validate(self, data):
-        if data['new_password'] != data['confirm_password']:
-            raise serializers.ValidationError("New passwords don't match")
-        return data
+    
+    def validate_new_password(self, value):
+        if len(value) < 8:
+            raise serializers.ValidationError("Password must be at least 8 characters long")
+        return value
