@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -124,6 +124,14 @@ function LoginForm() {
             className="block w-full p-1 rounded-lg border border-gray-30 shadow focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-600 focus:ring-opacity-50" 
             onChange={handleChange}
           />
+          <div className="flex justify-end mt-1">
+            <Link 
+              to="/forgot-password" 
+              className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              Forgot Password?
+            </Link>
+          </div>
         </div>
         <div className="flex items-center mb-4">
           <input

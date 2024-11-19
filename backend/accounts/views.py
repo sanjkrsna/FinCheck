@@ -13,6 +13,13 @@ import pytz
 import pandas as pd
 from django.http import HttpRequest
 from django.http import QueryDict
+from django.core.mail import send_mail
+import random
+from django.core.cache import cache
+from rest_framework.views import APIView
+from django.conf import settings
+from .models import OTP
+from django.utils import timezone
 
 
 class UserRegistrationAPIView(GenericAPIView):
@@ -387,6 +394,98 @@ def get_stock_details(request, stock_name):
     except Exception as e:
         print(f"Error in get_stock_details: {e}")
         return JsonResponse({'error': str(e)}, status=400)
+
+
+class RequestPasswordResetView(GenericAPIView):
+    permission_classes = (AllowAny,)
+    serializer_class = RequestPasswordResetSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        
+        # Generate OTP
+        otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        # Store OTP in database
+        OTP.objects.filter(email=email).delete()  # Remove any existing OTPs
+        OTP.objects.create(email=email, otp=otp)
+        
+        # Send email
+        send_mail(
+            'Password Reset OTP',
+            f'Your OTP for password reset is: {otp}. Valid for 5 minutes.',
+            settings.EMAIL_HOST_USER,
+            [email],
+            fail_silently=False,
+        )
+        
+        return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
+
+class VerifyOTPView(GenericAPIView):
+    permission_classes = (AllowAny,)
+    serializer_class = VerifyOTPSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        otp = serializer.validated_data['otp']
+        
+        try:
+            otp_obj = OTP.objects.get(email=email, otp=otp)
+            if not otp_obj.is_valid():
+                otp_obj.delete()
+                return Response({'error': 'OTP has expired'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            otp_obj.delete()  # Delete OTP after successful verification
+            return Response({'message': 'OTP verified successfully'}, status=status.HTTP_200_OK)
+            
+        except OTP.DoesNotExist:
+            return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+
+class ResetPasswordView(GenericAPIView):
+    permission_classes = (AllowAny,)
+    serializer_class = ResetPasswordSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            user = User.objects.get(email=serializer.validated_data['email'])
+            user.set_password(serializer.validated_data['password'])
+            user.save()
+            return Response({'message': 'Password reset successful'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class UpdateUserView(GenericAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = UpdateUserSerializer
+
+    def put(self, request):
+        serializer = self.get_serializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ChangePasswordView(GenericAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user = request.user
+        if not user.check_password(serializer.validated_data['old_password']):
+            return Response({'error': 'Invalid old password'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
 
             

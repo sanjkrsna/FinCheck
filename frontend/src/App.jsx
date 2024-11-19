@@ -8,6 +8,7 @@ import HomeView from './components/views/HomeView';
 import PortfolioView from './components/views/PortfolioView';
 import ProtectedRoute from './components/ProtectedRoute';
 import StockDashboard from './components/views/StockDashboard';
+import ForgotPassword from './components/ForgotPassword';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="stock" element={<PortfolioView />} />
         <Route path="stock/:stockName" element={<StockDashboard />} />
       </Route>
+      <Route path="/forgot-password" element={<ForgotPassword />} />
     </Routes>
   );
 }

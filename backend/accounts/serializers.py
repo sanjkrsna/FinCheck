@@ -1,6 +1,9 @@
 from .models import User
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.core.mail import send_mail
+import random
+from django.core.cache import cache
 
 class CustomSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,3 +59,42 @@ class UserLoginSerializer(serializers.Serializer):
         
         # Raise validation error if authentication fails
         raise serializers.ValidationError("Incorrect Credentials")
+
+class RequestPasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email=value)
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError("No user found with this email address.")
+
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField()
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        if data['password'] != data['confirm_password']:
+            raise serializers.ValidationError("Passwords don't match")
+        return data
+
+class UpdateUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'username')
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+    confirm_password = serializers.CharField(required=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError("New passwords don't match")
+        return data
