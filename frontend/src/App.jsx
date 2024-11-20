@@ -10,6 +10,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import StockDashboard from './components/views/StockDashboard';
 import ForgotPassword from './components/ForgotPassword';
 import Settings from './components/Settings';
+import AIAssistantView from './components/views/AIAssistantView';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="stock" element={<PortfolioView />} />
         <Route path="stock/:stockName" element={<StockDashboard />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="ai-assistant" element={<AIAssistantView />} />
       </Route>
       <Route path="/forgot-password" element={<ForgotPassword />} />
     </Routes>
