@@ -35,29 +35,44 @@ const HomePage = () => {
   }, []);
 
   useEffect(() => {
+    console.log('Auth state changed:', { isAuthenticated });
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    let mounted = true;
+    
     const fetchUserData = async () => {
       try {
         const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
-        if (token) {
-          const config = {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          };
-          const response = await axios.get('http://127.0.0.1:8000/api/user/', config);
-          setFirstname(response.data.first_name);
-          setLastname(response.data.last_name);
-          setEmail(response.data.email);
-        }
+        if (!token || !mounted) return;
+        
+        const config = {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        };
+        
+        const response = await axios.get('http://127.0.0.1:8000/api/user/', config);
+        if (!mounted) return;
+        
+        setFirstname(response.data.first_name);
+        setLastname(response.data.last_name);
+        setEmail(response.data.email);
       } catch (error) {
         console.error('Failed to fetch user data', error);
+        if (error.response?.status === 401) {
+          console.log('Unauthorized request detected');
+        }
       }
     };
 
     if (isAuthenticated) {
       fetchUserData();
-      setFadeIn(true);
     }
+
+    return () => {
+      mounted = false;
+    };
   }, [isAuthenticated]);
 
   const handleLoginClick = () => {
@@ -75,7 +90,10 @@ const HomePage = () => {
   };
 
   const handleNavigation = (route) => {
-    if (route === 'home' && location.pathname === '/') {
+    if (
+      (route === 'home' && location.pathname === '/') ||
+      (route !== 'home' && location.pathname === `/${route}`)
+    ) {
       return;
     }
     navigate(route === 'home' ? '/' : `/${route}`);
@@ -85,6 +103,16 @@ const HomePage = () => {
     const path = location.pathname.split('/')[1];
     setActiveMenu(path || 'home');
   }, [location]);
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      console.log('Navigation occurred at:', new Date().toISOString());
+      console.trace('Navigation stack trace');
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
 
   return (
     <div className="h-screen flex overflow-hidden">

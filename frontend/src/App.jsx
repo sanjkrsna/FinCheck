@@ -1,5 +1,5 @@
 // App.jsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
 import HomePage from './pages/HomePage';
@@ -13,6 +13,18 @@ import Settings from './components/Settings';
 import AIAssistantView from './components/views/AIAssistantView';
 
 function App() {
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('Checking for intervals at:', new Date().toISOString());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    console.log('Navigation occurred to:', window.location.pathname);
+  }, [window.location.pathname]);
+
   return (
     <Routes>
       <Route path="/" element={<AuthPage />} />
