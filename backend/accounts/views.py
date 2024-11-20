@@ -405,14 +405,11 @@ class RequestPasswordResetView(GenericAPIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data['email']
         
-        # Generate OTP
         otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
         
-        # Store OTP in database
-        OTP.objects.filter(email=email).delete()  # Remove any existing OTPs
+        OTP.objects.filter(email=email).delete()
         OTP.objects.create(email=email, otp=otp)
         
-        # Send styled email
         send_otp_email(email, otp)
         
         return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
