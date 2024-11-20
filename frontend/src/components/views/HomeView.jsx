@@ -169,17 +169,18 @@ const HomeView = () => {
       
       const processedData = data
         .map(item => ({
-          date: new Date(item.date),
+          date: new Date(item.date).getTime(),
           primary: parseFloat(item['^BSESN']),
           secondary: parseFloat(item['^NSEI'])
         }))
         .filter(item => 
-          item.date instanceof Date && 
           !isNaN(item.date) && 
           !isNaN(item.primary) && 
           !isNaN(item.secondary)
         )
         .sort((a, b) => a.date - b.date);
+
+      console.log('Processed data sample:', processedData.slice(0, 2));
 
       localStorage.setItem(CACHE_KEYS.HISTORICAL_DATA, JSON.stringify({
         data: processedData,
@@ -476,11 +477,17 @@ const HomeView = () => {
                 </svg>
               </button>
             </div>
+          ) : loadingAnimation ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            </div>
           ) : (
             <MarketAreaChart 
               data={historicalData} 
               height={200}
               showNifty={true}
+              error={loadError}
+              onRefresh={() => fetchAndCacheData(true)}
             />
           )}
         </div>

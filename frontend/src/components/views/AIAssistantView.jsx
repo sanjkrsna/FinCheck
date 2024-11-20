@@ -60,6 +60,7 @@ const AIAssistantView = () => {
   const [loading, setLoading] = useState(false);
   const [stocksData, setStocksData] = useState({});
   const chatContainerRef = useRef(null);
+  const [analysisComplete, setAnalysisComplete] = useState(false);
 
   // Add fetchStockData function
   const fetchStockData = async (stockName) => {
@@ -81,9 +82,9 @@ const AIAssistantView = () => {
     }
   };
 
-  // Add generateAnalysisPrompt function
+  // Update generateAnalysisPrompt function to remove recommendation section
   const generateAnalysisPrompt = (stocksData) => {
-    return `Please provide a detailed analysis of the following stocks:
+    return `Please analyze the following market data:
 
 ${Object.entries(stocksData).map(([stock, data]) => `
 # ${stock}
@@ -93,34 +94,88 @@ ${Object.entries(stocksData).map(([stock, data]) => `
 - Day Change: ${data.market.day_change_percent}%
 - Volume: ${data.market.volume.toLocaleString('en-IN')}
 - Trading Range: ₹${data.market.low.toLocaleString('en-IN')} - ₹${data.market.high.toLocaleString('en-IN')}
+- Market Status: ${data.market.market_status}
 
-## Financial Health
-- Score: ${data.financial.current_score.toFixed(2)}
+## Historical Price Trend (Last 30 Days)
+${data.market.historical_data.map(day => 
+  `- ${day.date}: ₹${day.price.toLocaleString('en-IN')} | Volume: ${day.volume.toLocaleString('en-IN')}`
+).join('\n')}
+
+## Financial Analysis
+- Current Score (2024): ${data.financial.current_score.toFixed(2)}
 - Classification: ${data.financial.classification}
 
-## Market Sentiment
-${data.sentiment.classification}
+### Financial Score History
+${Object.entries(data.financial.yearly_scores)
+  .map(([year, score]) => `- ${year}: ${score.toFixed(2)}`)
+  .join('\n')}
 
-## Forecast
+## Market Sentiment Analysis
+- Current Classification: ${data.sentiment.classification}
+
+### Daily Sentiment Trends
+${Object.entries(data.sentiment.daily_sentiments)
+  .map(([date, score]) => `- ${date}: ${score.toFixed(2)}`)
+  .join('\n')}
+
+## Future Projections
+- Forecast Period: ${data.forecast.forecast_period.start} to ${data.forecast.forecast_period.end}
 - Projected Price: ₹${data.forecast.projected_price.toLocaleString('en-IN')}
 - Expected Change: ${data.forecast.forecast_change_percent}%
-`).join('\n')}
+
+### Detailed Price Projections
+${data.forecast.data.map(forecast => 
+  `- ${forecast.Date}: ₹${forecast[Object.keys(forecast).find(key => key !== 'Date')].toLocaleString('en-IN')}`
+).join('\n')}
+`).join('\n\n')}
 
 Please provide a comprehensive analysis including:
 
-1. Individual assessment for each stock
-2. Technical analysis of price movements
-3. Financial health evaluation
-4. Risk assessment
-5. Growth potential analysis
-6. Entry/exit points recommendations
-7. Risk management strategies
-${selectedStocks.length > 1 ? '8. Comparative analysis between the stocks' : ''}
+1. Market Position Analysis
+   - Current market position
+   - Price trend analysis
+   - Volume analysis
+   - Support and resistance levels
 
-Format the response with clear headers and sections using markdown.`;
+2. Financial Health Assessment
+   - Score trend analysis
+   - Year-over-year comparison
+   - Classification implications
+
+3. Sentiment Analysis
+   - Current market sentiment
+   - Sentiment trend analysis
+   - Correlation with price movements
+
+4. Future Outlook
+   - Short-term projections (next 30 days)
+   - Long-term forecast analysis (3-6 months)
+   - Growth potential assessment
+
+5. Risk Assessment
+   - Market risks
+   - Technical risks
+   - Fundamental risks
+
+6. Trading Recommendations
+   - Entry points with specific price levels
+   - Exit points with target prices
+   - Stop-loss levels based on support
+   - Position sizing suggestions
+   - Investment timeline recommendations
+
+7. Action Items
+   - Immediate steps to consider
+   - Monitoring points
+   - Risk mitigation strategies
+   - Portfolio adjustment suggestions
+
+Please provide specific data points and evidence for each conclusion. Compare current values with historical trends and future projections to support your analysis.
+
+Format the response with clear headers and sections using markdown. Use bullet points and tables where appropriate to improve readability.`;
   };
 
-  // Add handleSendMessage function
+  // Update handleSendMessage function to remove the stock selection check
   const handleSendMessage = async (message) => {
     if (!message.trim()) return;
 
@@ -128,14 +183,6 @@ Format the response with clear headers and sections using markdown.`;
     setLoading(true);
 
     try {
-      if (selectedStocks.length === 0) {
-        throw new Error('Please select stocks to analyze first');
-      }
-
-      if (!Object.keys(stocksData).length) {
-        throw new Error('Please analyze stocks before asking questions');
-      }
-
       const model = genAI.getGenerativeModel({ model: "gemini-pro" });
       
       // Get recent chat history
@@ -144,22 +191,55 @@ Format the response with clear headers and sections using markdown.`;
       ).join('\n');
 
       const prompt = `You are a financial advisor analyzing these stocks. 
+
 Previous conversation:
 ${recentHistory}
 
 Available stock data:
 ${Object.entries(stocksData).map(([stock, data]) => `
 ${stock}:
-- Price: ₹${data.market.current_price}
-- Change: ${data.market.day_change_percent}%
-- Score: ${data.financial.current_score}
-- Sentiment: ${data.sentiment.classification}
-- Forecast: ${data.forecast.forecast_change_percent}% growth
-`).join('\n')}
+## Market Data
+- Current Price: ₹${data.market.current_price.toLocaleString('en-IN')}
+- Day Change: ${data.market.day_change_percent}%
+- Volume: ${data.market.volume.toLocaleString('en-IN')}
+- Market Status: ${data.market.market_status}
+
+## Historical Price Trend (Last 30 Days)
+${data.market.historical_data.map(day => 
+  `- ${day.date}: ₹${day.price.toLocaleString('en-IN')} | Volume: ${day.volume.toLocaleString('en-IN')}`
+).join('\n')}
+
+## Financial Analysis
+- Current Score (2024): ${data.financial.current_score.toFixed(2)}
+- Classification: ${data.financial.classification}
+
+### Financial Score History
+${Object.entries(data.financial.yearly_scores)
+  .map(([year, score]) => `- ${year}: ${score.toFixed(2)}`)
+  .join('\n')}
+
+## Market Sentiment Analysis
+- Current Classification: ${data.sentiment.classification}
+
+### Daily Sentiment Trends
+${Object.entries(data.sentiment.daily_sentiments)
+  .map(([date, score]) => `- ${date}: ${score.toFixed(2)}`)
+  .join('\n')}
+
+## Future Projections
+- Forecast Period: ${data.forecast.forecast_period.start} to ${data.forecast.forecast_period.end}
+- Projected Price: ₹${data.forecast.projected_price.toLocaleString('en-IN')}
+- Expected Change: ${data.forecast.forecast_change_percent}%
+
+### Detailed Price Projections
+${data.forecast.data.map(forecast => 
+  `- ${forecast.Date}: ₹${forecast[Object.keys(forecast).find(key => key !== 'Date')].toLocaleString('en-IN')}`
+).join('\n')}
+`).join('\n\n')}
 
 User question: ${message}
 
-Please provide a detailed response using markdown formatting.`;
+Please provide a detailed response using markdown formatting. Reference specific data points from the available information to support your analysis. If discussing trends or making comparisons, explain your reasoning using the historical data, sentiment scores, and forecast values provided.`;
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -449,33 +529,16 @@ Please provide a detailed response using markdown formatting.`;
               }}
               className="space-y-2"
             >
-              {selectedStocks.length === 0 ? (
-                <div className="text-sm text-amber-600 mb-2">
-                  ⚠️ Please select stocks to analyze first
-                </div>
-              ) : !Object.keys(stocksData).length ? (
-                <div className="text-sm text-amber-600 mb-2">
-                  ⚠️ Click "Analyze" before asking questions
-                </div>
-              ) : null}
-              
               <div className="flex space-x-4">
                 <input
                   type="text"
                   name="message"
-                  placeholder={
-                    selectedStocks.length === 0
-                      ? "Select stocks first..."
-                      : !Object.keys(stocksData).length
-                      ? "Analyze stocks before asking questions..."
-                      : "Ask questions about the selected stocks..."
-                  }
-                  disabled={selectedStocks.length === 0 || !Object.keys(stocksData).length}
-                  className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  placeholder="Ask questions about the stocks..."
+                  className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   type="submit"
-                  disabled={selectedStocks.length === 0 || !Object.keys(stocksData).length || loading}
+                  disabled={loading}
                   className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Sending...' : 'Send'}

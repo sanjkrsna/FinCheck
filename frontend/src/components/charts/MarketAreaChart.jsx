@@ -13,6 +13,12 @@ const MarketAreaChart = ({
   error = false,
   onRefresh
 }) => {
+  console.log('Chart data:', { 
+    dataLength: data?.length,
+    firstItem: data?.[0],
+    lastItem: data?.[data?.length - 1]
+  });
+
   if (error) {
     return (
       <div className="h-full flex flex-col items-center justify-center space-y-4">
