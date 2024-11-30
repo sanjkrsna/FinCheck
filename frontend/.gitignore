@@ -6,6 +6,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 node_modules
+updated_datas
+venv
+*.sqlite3
 dist
 dist-ssr
 *.local
