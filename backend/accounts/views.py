@@ -115,7 +115,7 @@ def stock_data(request):
 
     try:
         if data_type == 'historical':
-            start_date = end_date - timedelta(days=31)
+            start_date = end_date - timedelta(days=30)
             
             data = yf.download(symbols, start=start_date, end=end_date, interval='1d', progress=False)
             

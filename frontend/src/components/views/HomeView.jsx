@@ -443,12 +443,6 @@ const HomeView = () => {
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-lg font-semibold">Market Overview</h2>
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500">
-              Last updated: {new Date().toLocaleDateString()}
-            </span>
-            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-              Market Closed
-            </span>
           </div>
         </div>
         <div className="relative h-[200px]">
